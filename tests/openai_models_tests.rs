@@ -16,6 +16,8 @@ fn test_chat_completion_request_serialization() {
         seed: Some(42),
         tools: None,
         tool_choice: None,
+        parallel_tool_calls: None,
+        stop: None,
         response_format: None,
         user: Some("user_123".to_string()),
         x_context_strategy: Some("sliding-window".to_string()),
@@ -96,3 +98,53 @@ fn test_chat_completion_chunk_sse_format() {
     assert!(json.contains(r#""content":"token""#));
     assert!(json.contains(r#""chat.completion.chunk""#));
 }
+
+#[test]
+fn test_max_completion_tokens_and_conflict_resolution() {
+    let mut req = ChatCompletionRequest {
+        model: "apple-foundationmodel".to_string(),
+        messages: vec![OpenAIMessage::user("Hello")],
+        stream: None,
+        temperature: None,
+        top_p: None,
+        max_tokens: Some(100),
+        max_completion_tokens: None,
+        seed: None,
+        tools: None,
+        tool_choice: None,
+        parallel_tool_calls: None,
+        stop: None,
+        response_format: None,
+        user: None,
+        x_context_strategy: None,
+        x_context_max_turns: None,
+        x_context_output_reserve: None,
+    };
+
+    assert_eq!(req.validate_max_tokens().unwrap(), Some(100));
+
+    // Modern max_completion_tokens
+    req.max_tokens = None;
+    req.max_completion_tokens = Some(200);
+    assert_eq!(req.validate_max_tokens().unwrap(), Some(200));
+
+    // Both identical -> succeeds
+    req.max_tokens = Some(200);
+    assert_eq!(req.validate_max_tokens().unwrap(), Some(200));
+
+    // Conflicting -> fails with error
+    req.max_tokens = Some(150);
+    assert!(req.validate_max_tokens().is_err());
+}
+
+#[test]
+fn test_stop_sequences_single_and_multiple() {
+    let json_single = r#"{"model":"m","messages":[],"stop":"\n"}"#;
+    let req1: ChatCompletionRequest = serde_json::from_str(json_single).unwrap();
+    assert_eq!(req1.stop_sequences(), vec!["\n"]);
+
+    let json_multiple = r#"{"model":"m","messages":[],"stop":["\nObservation:", "Human:"]}"#;
+    let req2: ChatCompletionRequest = serde_json::from_str(json_multiple).unwrap();
+    assert_eq!(req2.stop_sequences(), vec!["\nObservation:", "Human:"]);
+}
+

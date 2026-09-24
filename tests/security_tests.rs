@@ -74,3 +74,17 @@ fn test_scrub_mcp_environment() {
     assert!(!scrubbed.contains_key("AWS_SECRET_ACCESS_KEY"));
     assert!(!scrubbed.contains_key("OPENAI_API_KEY"));
 }
+
+#[test]
+fn test_origin_validation_constrains() {
+    let normal = vec!["http://localhost:5173".to_string()];
+    assert!(OriginValidator::origin_validation_constrains(false, &normal));
+
+    // Footgun disables constraint
+    assert!(!OriginValidator::origin_validation_constrains(true, &normal));
+
+    // Wildcard disables constraint
+    let wildcard = vec!["*".to_string()];
+    assert!(!OriginValidator::origin_validation_constrains(false, &wildcard));
+}
+

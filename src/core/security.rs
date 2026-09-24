@@ -40,6 +40,12 @@ impl OriginValidator {
         false
     }
 
+    /// True only when origin validation actually constrains incoming origins.
+    /// Returns false if footgun is on OR if allowed_origins contains "*".
+    pub fn origin_validation_constrains(footgun: bool, allowed_origins: &[String]) -> bool {
+        !footgun && !allowed_origins.iter().any(|o| o == "*")
+    }
+
     fn matches_origin(origin: &str, pattern: &str) -> bool {
         if origin == pattern {
             return true;

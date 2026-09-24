@@ -48,6 +48,8 @@ pub struct PropertyIR {
 pub struct SchemaParser;
 
 impl SchemaParser {
+    pub const MAX_SCHEMA_DEPTH: usize = 64;
+
     pub fn parse(json_str: &str, root_name: &str) -> Result<SchemaIR, ApfelError> {
         let val: serde_json::Value = serde_json::from_str(json_str)
             .map_err(|e| ApfelError::Usage(format!("Invalid JSON in schema: {}", e)))?;
@@ -56,13 +58,21 @@ impl SchemaParser {
             ApfelError::Usage("Schema root must be a JSON object".to_string())
         })?;
 
-        Self::parse_object(obj, root_name)
+        Self::parse_object(obj, root_name, 0)
     }
 
     fn parse_object(
         obj: &serde_json::Map<String, serde_json::Value>,
         name: &str,
+        depth: usize,
     ) -> Result<SchemaIR, ApfelError> {
+        if depth > Self::MAX_SCHEMA_DEPTH {
+            return Err(ApfelError::Usage(format!(
+                "JSON schema exceeds maximum nesting depth of {}",
+                Self::MAX_SCHEMA_DEPTH
+            )));
+        }
+
         let (node, _nullable) = Self::normalize_union(obj)?;
         let node_type = node
             .get("type")
@@ -100,7 +110,7 @@ impl SchemaParser {
                         ApfelError::Usage(format!("Property '{}' must be an object", key))
                     })?;
                     let (prop_node, prop_nullable) = Self::normalize_union(prop_obj)?;
-                    let child_ir = Self::parse_object(prop_obj, key)?;
+                    let child_ir = Self::parse_object(prop_obj, key, depth + 1)?;
                     let child_desc = prop_node
                         .get("description")
                         .and_then(|v| v.as_str())
@@ -156,7 +166,7 @@ impl SchemaParser {
                 let items_obj = items_val.as_object().ok_or_else(|| {
                     ApfelError::Usage(format!("'items' in array '{}' must be an object", name))
                 })?;
-                let inner = Self::parse_object(items_obj, &format!("{}_item", name))?;
+                let inner = Self::parse_object(items_obj, &format!("{}_item", name), depth + 1)?;
                 Ok(SchemaIR::Array {
                     item_name: name.to_string(),
                     items: Box::new(inner),

@@ -26,6 +26,10 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<StopSequence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
@@ -39,9 +43,37 @@ pub struct ChatCompletionRequest {
     pub x_context_output_reserve: Option<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StopSequence {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
 impl ChatCompletionRequest {
     pub fn effective_max_tokens(&self) -> Option<usize> {
         self.max_completion_tokens.or(self.max_tokens)
+    }
+
+    /// Validates max_tokens and max_completion_tokens according to OpenAI specification.
+    /// Rejects conflicting values with an error.
+    pub fn validate_max_tokens(&self) -> Result<Option<usize>, crate::core::error::ApfelError> {
+        if let (Some(legacy), Some(modern)) = (self.max_tokens, self.max_completion_tokens) {
+            if legacy != modern {
+                return Err(crate::core::error::ApfelError::Usage(
+                    format!("Conflicting max_tokens ({}) and max_completion_tokens ({})", legacy, modern)
+                ));
+            }
+        }
+        Ok(self.effective_max_tokens())
+    }
+
+    pub fn stop_sequences(&self) -> Vec<&str> {
+        match &self.stop {
+            Some(StopSequence::Single(s)) => vec![s.as_str()],
+            Some(StopSequence::Multiple(list)) => list.iter().map(|s| s.as_str()).collect(),
+            None => Vec::new(),
+        }
     }
 }
 

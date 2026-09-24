@@ -13,6 +13,16 @@ use rustyline::DefaultEditor;
 use std::io::{self, Write};
 use std::sync::Arc;
 
+#[cfg(unix)]
+fn set_private_permissions(path: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(metadata) = std::fs::metadata(path) {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o600);
+        let _ = std::fs::set_permissions(path, perms);
+    }
+}
+
 pub async fn run_chat_loop(
     engine: Arc<dyn BackendEngine>,
     system_prompt: Option<String>,
@@ -24,6 +34,11 @@ pub async fn run_chat_loop(
     println!();
 
     let mut rl = DefaultEditor::new().map_err(|e| ApfelError::Runtime(e.to_string()))?;
+    let histfile = std::env::var("APFEL_HISTFILE").ok();
+    if let Some(ref hf) = histfile {
+        let _ = rl.load_history(hf);
+    }
+
     let mut history: Vec<OpenAIMessage> = Vec::new();
 
     if let Some(sys) = &system_prompt {
@@ -53,6 +68,8 @@ pub async fn run_chat_loop(
                     if path.ends_with(".json") {
                         if let Ok(json) = serde_json::to_string_pretty(&history) {
                             if std::fs::write(path, json).is_ok() {
+                                #[cfg(unix)]
+                                set_private_permissions(path);
                                 println!("{}", format!("Saved conversation JSON to '{}'", path).green());
                             } else {
                                 eprintln!("{}", format!("Failed to write to '{}'", path).red());
@@ -64,6 +81,8 @@ pub async fn run_chat_loop(
                             md.push_str(&format!("### {}\n\n{}\n\n", m.role.to_uppercase(), m.text_content()));
                         }
                         if std::fs::write(path, md).is_ok() {
+                            #[cfg(unix)]
+                            set_private_permissions(path);
                             println!("{}", format!("Saved conversation Markdown to '{}'", path).green());
                         } else {
                             eprintln!("{}", format!("Failed to write to '{}'", path).red());
@@ -201,6 +220,12 @@ pub async fn run_chat_loop(
                 break;
             }
         }
+    }
+
+    if let Some(ref hf) = histfile {
+        let _ = rl.save_history(hf);
+        #[cfg(unix)]
+        set_private_permissions(hf);
     }
 
     Ok(())

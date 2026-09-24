@@ -87,6 +87,17 @@ pub async fn chat_completions_handler(
         permissive: false,
     };
 
+    let effective_max_tokens = match req.validate_max_tokens() {
+        Ok(t) => t,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(err.to_openai_json()),
+            )
+                .into_response();
+        }
+    };
+
     let session_mgr = SessionManager::new(state.engine.clone(), state.mcp_manager.clone());
 
     if is_stream {
@@ -113,7 +124,7 @@ pub async fn chat_completions_handler(
             messages: Some(req.messages.clone()),
             temperature: req.temperature,
             top_p: req.top_p,
-            max_tokens: req.effective_max_tokens(),
+            max_tokens: effective_max_tokens,
             permissive: false,
             seed: req.seed,
         };
@@ -188,14 +199,19 @@ pub async fn chat_completions_handler(
             .unwrap()
     } else {
         // Non-streaming path with full MCP loop
+        let effective_tools = match &req.tool_choice {
+            Some(crate::core::models::ToolChoice::Mode(m)) if m == "none" => None,
+            _ => req.tools.as_deref(),
+        };
+
         let result = match session_mgr
             .process_messages(
                 &req.messages,
-                req.tools.as_deref(),
+                effective_tools,
                 &config,
                 req.temperature,
                 req.top_p,
-                req.effective_max_tokens(),
+                effective_max_tokens,
                 req.seed,
             )
             .await
@@ -220,12 +236,26 @@ pub async fn chat_completions_handler(
             result.content
         };
 
+        let mut final_content = content;
+        let mut final_finish_reason = result.finish_reason;
+
+        let stop_seqs = req.stop_sequences();
+        if !stop_seqs.is_empty() {
+            for seq in stop_seqs {
+                if let Some(pos) = final_content.find(seq) {
+                    final_content.truncate(pos);
+                    final_finish_reason = "stop".to_string();
+                    break;
+                }
+            }
+        }
+
         let prompt_tokens = req
             .messages
             .iter()
             .map(|m| state.engine.count_tokens(&m.text_content()))
             .sum();
-        let completion_tokens = state.engine.count_tokens(&content);
+        let completion_tokens = state.engine.count_tokens(&final_content);
 
         let resp = ChatCompletionResponse {
             id: format!("chatcmpl-{}", Uuid::new_v4()),
@@ -234,8 +264,8 @@ pub async fn chat_completions_handler(
             model: req.model,
             choices: vec![ChatCompletionChoice {
                 index: 0,
-                message: OpenAIMessage::assistant(content),
-                finish_reason: result.finish_reason,
+                message: OpenAIMessage::assistant(final_content),
+                finish_reason: final_finish_reason,
             }],
             usage: Usage {
                 prompt_tokens,

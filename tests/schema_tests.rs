@@ -59,3 +59,15 @@ fn test_schema_parser_nullable_normalization() {
         _ => panic!("Expected SchemaIR::Object"),
     }
 }
+
+#[test]
+fn test_deeply_nested_schema_rejected() {
+    let mut schema = String::from(r#"{"type":"string"}"#);
+    for _ in 0..70 {
+        schema = format!(r#"{{"type":"object","properties":{{"nested":{}}}}}"#, schema);
+    }
+    let res = SchemaParser::parse(&schema, "Deep");
+    assert!(res.is_err());
+    let err = res.unwrap_err().to_string();
+    assert!(err.contains("exceeds maximum nesting depth") || err.contains("recursion limit"));
+}

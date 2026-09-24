@@ -30,7 +30,7 @@ pub async fn run_server(
     };
 
     let security_config = Arc::new(middleware::ServerSecurityConfig {
-        allowed_origins,
+        allowed_origins: allowed_origins.clone(),
         required_token: token,
         footgun,
     });
@@ -54,6 +54,9 @@ pub async fn run_server(
         .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+    if !crate::core::security::OriginValidator::origin_validation_constrains(footgun, &allowed_origins) {
+        eprintln!("\x1b[31mWARNING: origin check disabled - all origins allowed\x1b[0m");
+    }
     println!("apfel server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
