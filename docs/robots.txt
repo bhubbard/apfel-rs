@@ -1,0 +1,5 @@
+# robots.txt for https://bhubbard.github.io/apfel-rs/
+User-agent: *
+Allow: /
+
+Sitemap: https://bhubbard.github.io/apfel-rs/sitemap.xml

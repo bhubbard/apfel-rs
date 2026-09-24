@@ -2,27 +2,139 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>apfel-rs 🍏🦀 — Apple Intelligence on-device FoundationModels in Rust</title>
   
-  <meta name="description" content="High-performance native Rust fork of apfel: Apple Intelligence on-device FoundationModels from the command line and OpenAI-compatible HTTP server.">
-  <meta name="keywords" content="apple intelligence, rust, foundation models, openai api, mcp, model context protocol, apple silicon, macos, cli">
+  <meta name="description" content="High-performance native Rust implementation of apfel: Apple Intelligence on-device FoundationModels from the command line and OpenAI-compatible HTTP daemon. Zero network latency, 4,160 req/s throughput.">
+  <meta name="keywords" content="apple intelligence, rust, foundation models, openai api, mcp, model context protocol, apple silicon, macos sequoia, on device llm, local ai, brew, axum">
   <meta name="author" content="Brandon Hubbard">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="theme-color" content="#060709">
+  <meta name="color-scheme" content="dark">
+
+  <!-- Canonical and Language -->
+  <link rel="canonical" href="https://bhubbard.github.io/apfel-rs/">
+  <link rel="alternate" hreflang="x-default" href="https://bhubbard.github.io/apfel-rs/">
+  <link rel="alternate" hreflang="en" href="https://bhubbard.github.io/apfel-rs/">
 
   <!-- OpenGraph -->
-  <meta property="og:title" content="apfel-rs 🍏🦀 — Apple Intelligence in Rust">
-  <meta property="og:description" content="High-performance Rust fork of apfel. Apple Intelligence on-device FoundationModels via CLI and OpenAI-compatible server.">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:site_name" content="apfel-rs">
   <meta property="og:type" content="website">
+  <meta property="og:title" content="apfel-rs 🍏🦀 — Apple Intelligence on-device FoundationModels in Rust">
+  <meta property="og:description" content="High-performance native Rust implementation of apfel. Bridges Apple Intelligence FoundationModels to an ultra-fast CLI and OpenAI-compatible server on Apple Silicon.">
   <meta property="og:url" content="https://bhubbard.github.io/apfel-rs/">
-  <meta property="og:image" content="https://bhubbard.github.io/apfel-rs/favicon.svg">
+  <meta property="og:image" content="https://bhubbard.github.io/apfel-rs/og-image.png">
+  <meta property="og:image:secure_url" content="https://bhubbard.github.io/apfel-rs/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="apfel-rs — Apple FoundationModels in Native Rust">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="apfel-rs — Apple Intelligence in Rust">
-  <meta name="twitter:description" content="Zero network latency, 4,160 req/s, 2.5MB binary. Apple Intelligence via Rust & OpenAI API.">
+  <meta name="twitter:title" content="apfel-rs 🍏🦀 — Apple Intelligence on-device FoundationModels in Rust">
+  <meta name="twitter:description" content="Zero network latency, 4,160 req/s, 2.5MB binary. Run Apple Intelligence via native Rust and OpenAI API.">
+  <meta name="twitter:image" content="https://bhubbard.github.io/apfel-rs/og-image.png">
+  <meta name="twitter:image:alt" content="apfel-rs banner and benchmarks">
 
+  <!-- Preloads & Favicon -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preload" href="styles.css" as="style">
+  <link rel="preload" href="favicon.svg" as="image" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
+
+  <!-- Schema.org Structured Data Graph -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://bhubbard.github.io/apfel-rs/#website",
+        "url": "https://bhubbard.github.io/apfel-rs/",
+        "name": "apfel-rs",
+        "description": "Apple Intelligence on-device FoundationModels in Native Rust",
+        "inLanguage": "en-US"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://bhubbard.github.io/apfel-rs/#software",
+        "name": "apfel-rs",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS Sequoia (26.0+), Apple Silicon",
+        "softwareVersion": "0.1.0",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "license": "https://opensource.org/licenses/MIT",
+        "codeRepository": "https://github.com/bhubbard/apfel-rs",
+        "programmingLanguage": ["Rust", "Swift"],
+        "description": "High-performance native Rust implementation of apfel, bridging Apple FoundationModels directly into a lightweight CLI and OpenAI-compatible server."
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://bhubbard.github.io/apfel-rs/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is apfel-rs and how does it use Apple Intelligence?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "apfel-rs is a native Rust implementation and high-performance fork of apfel. It bridges Apple's macOS FoundationModels framework directly into a 2.5MB Rust binary, providing a UNIX-first CLI and an OpenAI-compatible HTTP daemon."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does apfel-rs require internet connectivity or third-party cloud API keys?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. apfel-rs runs 100% on-device on Apple Silicon using macOS FoundationModels. It does not send any telemetry, prompts, or completions over the network, ensuring zero data leakage and complete privacy."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does apfel-rs achieve a 3.76x throughput gain over Swift?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "By replacing the Swift Hummingbird HTTP stack with an optimized Rust Axum and Tokio multi-threaded runtime, reducing memory allocations, eliminating Swift garbage collection jitter, and executing via a zero-copy Swift C-ABI bridge."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I use apfel-rs with OpenAI SDKs, Cursor, and Open WebUI?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. apfel-rs provides standard OpenAI-compatible endpoints including POST /v1/chat/completions (with Server-Sent Events streaming), POST /v1/responses, GET /v1/models, and GET /health on localhost."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What system requirements are needed for apfel-rs?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "apfel-rs requires macOS Sequoia (26.0+) running on Apple Silicon (M1, M2, M3, M4 or later) with Apple Intelligence enabled."
+            }
+          }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://bhubbard.github.io/apfel-rs/"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <div class="bg-ambient"></div>
@@ -47,6 +159,7 @@
           <li><a href="#server">OpenAI API</a></li>
           <li><a href="#mcp">MCP</a></li>
           <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#faq">FAQ</a></li>
         </ul>
       </nav>
 
@@ -655,6 +768,89 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="section" id="faq">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Frequently Asked Questions</span>
+          <h2 class="section-title">Everything You Need to Know</h2>
+          <p class="section-desc">Common questions regarding architecture, privacy, compatibility, and setup.</p>
+        </div>
+
+        <div class="faq-grid">
+          <details class="faq-item" open>
+            <summary class="faq-question">
+              <span>What is apfel-rs and how does it use Apple Intelligence?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              <code>apfel-rs</code> is a complete, native Rust implementation and high-performance fork of the original Swift <code>apfel</code>. It bridges directly into Apple's macOS <code>FoundationModels</code> framework on Apple Silicon to execute on-device LLM inference without any cloud latency or telemetry.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>Does apfel-rs require an internet connection or cloud API keys?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              No. <code>apfel-rs</code> is 100% on-device. All inference runs locally through Apple Neural Engine / GPU cores. Zero data ever leaves your Mac, and no OpenAI or third-party subscription keys are needed.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>How does apfel-rs achieve a 3.76x speedup over the Swift version?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              By migrating the HTTP server from Swift's Hummingbird to Rust's <code>axum</code> and <code>tokio</code> runtime, optimizing token counting with zero-allocation buffers, eliminating Swift runtime GC/pause jitter, and interfacing with Swift via a lean, zero-overhead C-ABI bridge.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>Can I use apfel-rs as a drop-in local OpenAI backend in Cursor or Open WebUI?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              Yes! Start the server with <code>apfel --serve --port 8080</code> (or run <code>brew services start apfel-rs</code>). Configure your client's OpenAI Base URL to <code>http://127.0.0.1:8080/v1</code>. Any arbitrary string can be passed for the API key.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>What hardware and macOS versions are supported?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              You need an Apple Silicon Mac (M1, M2, M3, M4, or later) running macOS Sequoia 26.0 or higher with Apple Intelligence enabled in System Settings.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>How does Model Context Protocol (MCP) tool execution work?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              Pass <code>--mcp-server &lt;COMMAND&gt;</code> to attach an external MCP tool server over standard input/output. <code>apfel-rs</code> performs JSON-RPC capability negotiation, presents tool definitions to the FoundationModel, runs tool calls in an isolated sanitized environment, and re-prompts the model with execution outputs until completion.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>How do I run apfel-rs as an automatic login daemon?</span>
+              <span class="faq-icon">▼</span>
+            </summary>
+            <div class="faq-answer">
+              If installed via Homebrew, simply execute <code>brew services start apfel-rs</code>. Homebrew installs a launchd plist that starts the daemon automatically upon macOS user login on <code>127.0.0.1:32185</code>.
+            </div>
+          </details>
         </div>
       </div>
     </section>
