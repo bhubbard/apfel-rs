@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>apfel-rs 🍏🦀 — Apple Intelligence on-device FoundationModels in Rust</title>
+  
+  <meta name="description" content="High-performance native Rust fork of apfel: Apple Intelligence on-device FoundationModels from the command line and OpenAI-compatible HTTP server.">
+  <meta name="keywords" content="apple intelligence, rust, foundation models, openai api, mcp, model context protocol, apple silicon, macos, cli">
+  <meta name="author" content="Brandon Hubbard">
+
+  <!-- OpenGraph -->
+  <meta property="og:title" content="apfel-rs 🍏🦀 — Apple Intelligence in Rust">
+  <meta property="og:description" content="High-performance Rust fork of apfel. Apple Intelligence on-device FoundationModels via CLI and OpenAI-compatible server.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bhubbard.github.io/apfel-rs/">
+  <meta property="og:image" content="https://bhubbard.github.io/apfel-rs/favicon.svg">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="apfel-rs — Apple Intelligence in Rust">
+  <meta name="twitter:description" content="Zero network latency, 4,160 req/s, 2.5MB binary. Apple Intelligence via Rust & OpenAI API.">
+
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-ambient"></div>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="#" class="brand">
+        <span class="brand-icon">
+          <img src="favicon.svg" alt="apfel-rs logo" width="28" height="28">
+        </span>
+        <span>apfel-rs</span>
+        <span class="brand-badge">v0.1.0</span>
+      </a>
+
+      <nav>
+        <ul class="nav-links">
+          <li><a href="#highlights">Highlights</a></li>
+          <li><a href="#benchmarks">Benchmarks</a></li>
+          <li><a href="#install">Install</a></li>
+          <li><a href="#cli">CLI</a></li>
+          <li><a href="#server">OpenAI API</a></li>
+          <li><a href="#mcp">MCP</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-cta">
+        <a href="https://github.com/bhubbard/apfel-rs" target="_blank" rel="noopener noreferrer" class="btn-github">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="badge-wrapper">
+          <div class="hero-pill">
+            <span class="hero-pill-dot"></span>
+            <span>macOS Sequoia 26.0+ · Apple Silicon · 100% On-Device</span>
+          </div>
+        </div>
+
+        <h1 class="hero-title">
+          Apple Intelligence.<br>
+          <span class="gradient-text">Native Rust Speed.</span><br>
+          OpenAI Compatible.
+        </h1>
+
+        <p class="hero-subtitle">
+          High-performance native Rust implementation of <strong>apfel</strong>. Bridges Apple’s <code>FoundationModels</code> framework into an ultra-fast CLI and OpenAI-compatible HTTP daemon powered by Tokio and Axum.
+        </p>
+
+        <!-- Stats Bar -->
+        <div class="hero-stats-row">
+          <div class="stat-item">
+            <span class="stat-val">2.50 MB</span>
+            <span class="stat-label">Binary Size (-88%)</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-val">10.1 MB</span>
+            <span class="stat-label">Idle RSS RAM</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-val">4,160 req/s</span>
+            <span class="stat-label">Server Throughput (3.76x)</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-val">60+ tok/s</span>
+            <span class="stat-label">On-Device Generation</span>
+          </div>
+        </div>
+
+        <!-- Quick Install Tabs -->
+        <div class="install-box" id="install">
+          <div class="install-tabs">
+            <button class="tab-btn active" data-tab="homebrew">Homebrew</button>
+            <button class="tab-btn" data-tab="npx">NPX (Instant)</button>
+            <button class="tab-btn" data-tab="cargo">Cargo</button>
+            <button class="tab-btn" data-tab="npm">NPM Global</button>
+            <button class="tab-btn" data-tab="source">Source</button>
+          </div>
+          <div class="install-command-bar">
+            <code class="command-text" id="install-command-text">brew install bhubbard/tap/apfel-rs</code>
+            <button class="copy-btn" data-copy-target="install-command-text" aria-label="Copy install command">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Window Showcase -->
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="traffic-lights">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <div class="terminal-tabs">
+              <button class="term-tab active" data-sample="stream">--stream</button>
+              <button class="term-tab" data-sample="chat">--chat</button>
+              <button class="term-tab" data-sample="curl">OpenAI API</button>
+              <button class="term-tab" data-sample="bench">--benchmark</button>
+            </div>
+            <div style="width: 50px;"></div>
+          </div>
+          <div class="terminal-body" id="terminal-content">
+<span class="t-prompt">$</span> <span class="t-cmd">apfel --stream "Write a haiku about compiling Rust"</span>
+<span class="t-meta">[FoundationModels SystemLanguageModel 0.1B | On-Device]</span>
+
+<span class="t-out">Borrow checker smiles,</span>
+<span class="t-out">Zero-cost safety unfolds,</span>
+<span class="t-out">Binary runs swift.</span>
+
+<span class="t-success">✔ 18 tokens generated in 0.31s (58.1 tok/sec)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Benchmarks Section -->
+    <section class="section" id="benchmarks">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Real-World Stress Tests</span>
+          <h2 class="section-title">Rust vs. Swift Benchmark Results</h2>
+          <p class="section-desc">
+            Rigorous benchmarks comparing the original Swift binary against the native Rust build on Apple Silicon (macOS Sequoia).
+          </p>
+        </div>
+
+        <div class="bench-grid">
+          <!-- Metric 1: Binary Footprint -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Release Binary Size</span>
+              <span class="bench-badge">88.0% Smaller</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">20.75 MB</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 100%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">2.50 MB</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 12%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric 2: Idle RAM -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Server Idle RAM (RSS)</span>
+              <span class="bench-badge">54.6% Less Memory</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">22.2 MB</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 100%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">10.1 MB</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 45.4%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric 3: Throughput -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Server Throughput (RPS)</span>
+              <span class="bench-badge">3.76x Higher</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">1,106 req/s</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 26.6%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">4,160 req/s</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 100%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric 4: Tail Latency -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Server Tail Latency (p95)</span>
+              <span class="bench-badge">4.58x Lower Latency</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">45.11 ms</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 100%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">9.85 ms</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 21.8%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric 5: Token Jitter -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Token Counting Max Jitter</span>
+              <span class="bench-badge">8.17x Stability</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">748.19 ms</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 100%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">91.60 ms</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 12.2%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric 6: C-Bridge Overhead -->
+          <div class="bench-card">
+            <div class="bench-card-head">
+              <span class="bench-metric-name">Inference Generation</span>
+              <span class="bench-badge">Zero C-Bridge Penalty</span>
+            </div>
+            <div class="bench-bar-container">
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Swift (apfel)</span>
+                  <span class="bench-num">57.3 tok/s</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-swift" style="width: 100%;"></div>
+                </div>
+              </div>
+              <div class="bench-row">
+                <div class="bench-labels">
+                  <span class="bench-impl">Rust (apfel-rs)</span>
+                  <span class="bench-num" style="color: #34d399;">55.9 tok/s</span>
+                </div>
+                <div class="bench-track">
+                  <div class="bench-fill-rust" style="width: 97.5%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlights Grid -->
+    <section class="section" id="highlights">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Architecture &amp; Features</span>
+          <h2 class="section-title">Built for Performance, Privacy &amp; Simplicity</h2>
+          <p class="section-desc">
+            Everything you love about Apple Intelligence, wrapped in a UNIX-first Rust binary that fits in your pocket.
+          </p>
+        </div>
+
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🔒</div>
+            <h3 class="feature-title">100% On-Device &amp; Private</h3>
+            <p class="feature-desc">
+              Executes completely against macOS <code>FoundationModels</code> on Apple Silicon. Zero network calls, zero telemetry, zero tokens leaking outside your machine.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">⚡</div>
+            <h3 class="feature-title">OpenAI-Compatible Daemon</h3>
+            <p class="feature-desc">
+              Drop-in replacement for OpenAI endpoints. Provides <code>/v1/chat/completions</code> with streaming SSE, <code>/v1/responses</code>, <code>/v1/models</code>, and <code>/health</code>.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🛠️</div>
+            <h3 class="feature-title">Model Context Protocol (MCP)</h3>
+            <p class="feature-desc">
+              Integrates directly with external MCP servers over stdio. Automatically negotiates tools, invokes scripts, and runs the self-healing re-prompting loop.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🧠</div>
+            <h3 class="feature-title">5 Context Trimming Strategies</h3>
+            <p class="feature-desc">
+              Fine-tune conversation budgets with <code>sliding-window</code>, <code>newest-first</code>, <code>oldest-first</code>, <code>summarize</code>, or <code>strict</code> overflow protection.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🛡️</div>
+            <h3 class="feature-title">Hardened Localhost Security</h3>
+            <p class="feature-desc">
+              DNS rebinding and CSRF prevention, strict Origin header verification, constant-time Bearer token checks, and sanitized subprocess environments.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🍏</div>
+            <h3 class="feature-title">macOS Login Daemon</h3>
+            <p class="feature-desc">
+              Manage seamlessly via Homebrew. Run <code>brew services start apfel-rs</code> to launch on login on <code>127.0.0.1:32185</code> with automated log rotation.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OpenAI API Explorer -->
+    <section class="section" id="server">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Drop-in OpenAI Compatibility</span>
+          <h2 class="section-title">Use Your Favorite Tools &amp; SDKs</h2>
+          <p class="section-desc">
+            Point any OpenAI-compatible app, Cursor, Open WebUI, Python script, or TypeScript SDK directly to <code>http://127.0.0.1:8080/v1</code>.
+          </p>
+        </div>
+
+        <div class="api-explorer">
+          <div class="api-explorer-tabs">
+            <button class="api-tab-btn active" data-lang="curl">cURL (Streaming SSE)</button>
+            <button class="api-tab-btn" data-lang="python">Python (OpenAI SDK)</button>
+            <button class="api-tab-btn" data-lang="ts">TypeScript / Node.js</button>
+            <button class="api-tab-btn" data-lang="rust">Rust (Reqwest)</button>
+          </div>
+          <div class="api-code-panel">
+            <pre><code id="api-code-content"># POST /v1/chat/completions with SSE Streaming
+curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "apple-foundationmodel",
+    "stream": true,
+    "temperature": 0.7,
+    "messages": [
+      {"role": "system", "content": "You are a concise engineering assistant."},
+      {"role": "user", "content": "How does Rust guarantee thread safety?"}
+    ]
+  }'</code></pre>
+            <button class="copy-btn" data-copy-target="api-code-content" style="position: absolute; top: 16px; right: 16px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLI Reference Section -->
+    <section class="section" id="cli">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">UNIX Ergonomics</span>
+          <h2 class="section-title">Command-Line Reference</h2>
+          <p class="section-desc">
+            Powerful flags designed to pipe with <code>cat</code>, <code>jq</code>, and standard shell utilities.
+          </p>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Command / Flag</th>
+                <th>Description</th>
+                <th>Example Usage</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>apfel &lt;PROMPT&gt;</code></td>
+                <td>Standard single-shot completion</td>
+                <td><code>apfel "Explain DNS in one sentence"</code></td>
+              </tr>
+              <tr>
+                <td><code>--stream</code></td>
+                <td>Real-time SSE token stream to stdout</td>
+                <td><code>apfel --stream "Draft a quick release note"</code></td>
+              </tr>
+              <tr>
+                <td><code>-f, --file &lt;PATH&gt;</code></td>
+                <td>Attach text, pdf, or image files into context</td>
+                <td><code>apfel -f src/lib.rs "Summarize the exports"</code></td>
+              </tr>
+              <tr>
+                <td><code>--code</code></td>
+                <td>Extract only the first markdown code block</td>
+                <td><code>apfel --code "Write a Python script to parse JSON"</code></td>
+              </tr>
+              <tr>
+                <td><code>--chat</code></td>
+                <td>Interactive REPL with slash commands (<code>/info</code>, <code>/clear</code>)</td>
+                <td><code>apfel --chat</code></td>
+              </tr>
+              <tr>
+                <td><code>--serve</code></td>
+                <td>Run the OpenAI-compatible HTTP server</td>
+                <td><code>apfel --serve --port 8080</code></td>
+              </tr>
+              <tr>
+                <td><code>--mcp-server &lt;CMD&gt;</code></td>
+                <td>Attach external stdio MCP server for tool calls</td>
+                <td><code>apfel --mcp-server "./calc_mcp.py" "What is 42 * 10?"</code></td>
+              </tr>
+              <tr>
+                <td><code>--count-tokens</code></td>
+                <td>Accurately measure tokens before executing</td>
+                <td><code>apfel --count-tokens -f long_doc.txt</code></td>
+              </tr>
+              <tr>
+                <td><code>--benchmark</code></td>
+                <td>Execute internal throughput and latency stress test</td>
+                <td><code>apfel --benchmark</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="section" id="architecture">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Deep Dive</span>
+          <h2 class="section-title">System Architecture</h2>
+          <p class="section-desc">
+            How apfel-rs bridges the macOS C-ABI with zero serialization overhead and predictable memory bounds.
+          </p>
+        </div>
+
+        <div class="arch-diagram">
+          <div class="arch-flow-grid">
+            <div class="arch-node">
+              <span class="arch-node-badge">Input Ingress</span>
+              <h4 class="arch-node-title">CLI &amp; Axum HTTP</h4>
+              <p class="arch-node-desc">Piped stdin, CLI args, or /v1/chat/completions REST / SSE endpoints.</p>
+            </div>
+
+            <div class="arch-node">
+              <span class="arch-node-badge">Rust Core</span>
+              <h4 class="arch-node-title">Session Engine</h4>
+              <p class="arch-node-desc">Sliding window context trimmer, token budgeter, MCP tool loop, and security guards.</p>
+            </div>
+
+            <div class="arch-node">
+              <span class="arch-node-badge">Inter-Op Bridge</span>
+              <h4 class="arch-node-title">Swift C-ABI</h4>
+              <p class="arch-node-desc">Zero-copy C-ABI bridge providing memory safety between Rust FFI and Swift actors.</p>
+            </div>
+
+            <div class="arch-node">
+              <span class="arch-node-badge">Apple Silicon</span>
+              <h4 class="arch-node-title">FoundationModels</h4>
+              <p class="arch-node-desc">macOS on-device SystemLanguageModel running locally on Apple Neural Engine / GPU.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MCP Section -->
+    <section class="section" id="mcp">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Extensibility</span>
+          <h2 class="section-title">Model Context Protocol (MCP)</h2>
+          <p class="section-desc">
+            Equip Apple Intelligence with live external tools—from calculators to web search and database engines.
+          </p>
+        </div>
+
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">⚙️</div>
+            <h3 class="feature-title">Automatic Tool Discovery</h3>
+            <p class="feature-desc">
+              Launches any stdio MCP server (Python, Node.js, Go, or native executable) and negotiates JSON-RPC schemas automatically.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🔄</div>
+            <h3 class="feature-title">Self-Healing Reprompt Loop</h3>
+            <p class="feature-desc">
+              When the model triggers a tool call, <code>apfel-rs</code> executes the tool, feeds the output back into context, and reprompts for the final answer.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🛡️</div>
+            <h3 class="feature-title">Process Isolation</h3>
+            <p class="feature-desc">
+              Subprocesses run with scrubbed environment variables to prevent API token or credential leaks to external tools.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Exit Codes Reference -->
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Developer Reference</span>
+          <h2 class="section-title">Exit Codes</h2>
+          <p class="section-desc">Standardized POSIX exit codes for predictable shell script automation.</p>
+        </div>
+
+        <div class="table-card" style="max-width: 760px; margin: 0 auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Constant</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>0</code></td>
+                <td><code>SUCCESS</code></td>
+                <td>Successful completion</td>
+              </tr>
+              <tr>
+                <td><code>1</code></td>
+                <td><code>RUNTIME_ERROR</code></td>
+                <td>Internal runtime failure or Swift FFI exception</td>
+              </tr>
+              <tr>
+                <td><code>2</code></td>
+                <td><code>USAGE_ERROR</code></td>
+                <td>Invalid arguments or malformed JSON input</td>
+              </tr>
+              <tr>
+                <td><code>3</code></td>
+                <td><code>GUARDRAIL</code></td>
+                <td>System safety guardrail triggered</td>
+              </tr>
+              <tr>
+                <td><code>4</code></td>
+                <td><code>CONTEXT_OVERFLOW</code></td>
+                <td>Prompt exceeds context budget with <code>strict</code> strategy</td>
+              </tr>
+              <tr>
+                <td><code>5</code></td>
+                <td><code>MODEL_UNAVAILABLE</code></td>
+                <td>Apple Intelligence disabled or model not downloaded</td>
+              </tr>
+              <tr>
+                <td><code>6</code></td>
+                <td><code>RATE_LIMITED</code></td>
+                <td>System capacity exhausted</td>
+              </tr>
+              <tr>
+                <td><code>7</code></td>
+                <td><code>NO_CODE</code></td>
+                <td><code>--code</code> requested but no code block returned</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-content">
+      <div>
+        <p style="color: var(--text-main); font-weight: 600; margin-bottom: 4px;">
+          apfel-rs 🍏🦀
+        </p>
+        <p style="font-size: 0.85rem;">
+          Released under the MIT License · Designed by Brandon Hubbard
+        </p>
+      </div>
+
+      <ul class="footer-links">
+        <li><a href="https://github.com/bhubbard/apfel-rs" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/bhubbard/homebrew-tap" target="_blank" rel="noopener">Homebrew Tap</a></li>
+        <li><a href="https://crates.io/crates/apfel-rs" target="_blank" rel="noopener">Crates.io</a></li>
+        <li><a href="https://www.npmjs.com/package/apfel-rs" target="_blank" rel="noopener">npm</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
