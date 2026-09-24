@@ -2,6 +2,8 @@
 
 > High-performance Rust fork of [apfel](https://github.com/Arthur-Ficial/apfel): Apple Intelligence on-device FoundationModels from the command line and OpenAI-compatible server.
 
+[![crates.io](https://img.shields.io/crates/v/apfel-rs.svg)](https://crates.io/crates/apfel-rs)
+[![npm](https://img.shields.io/npm/v/apfel-rs.svg)](https://www.npmjs.com/package/apfel-rs)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
 [![macOS 26.0+](https://img.shields.io/badge/macOS-26.0%2B-black.svg)](https://apple.com/macos)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -60,14 +62,33 @@ Rigorous stress testing conducted on Apple Silicon (macOS Sequoia) comparing the
 
 ---
 
-## Installation & Build
+## Installation & Setup
 
-### Prerequisites
-- macOS Sequoia (macOS 26.0+) with Apple Silicon & Apple Intelligence enabled
-- Xcode Command Line Tools (`xcode-select --install`)
-- Rust toolchain (`rustup update stable`)
+### 1. Instant Run via NPX (Zero Setup)
+No Rust or Xcode installation required — runs the bundled Apple Silicon binary immediately:
 
-### Building from Source
+```bash
+npx apfel-rs "Explain quantum computing in one sentence"
+```
+
+### 2. Global Install via NPM
+```bash
+npm install -g apfel-rs
+
+# Command is now available globally
+apfel --stream "Write a haiku about compiling Rust"
+```
+
+### 3. Install via Cargo (crates.io)
+```bash
+cargo install apfel-rs
+
+# Command is now available globally
+apfel --model-info
+```
+
+### 4. Building from Source
+**Prerequisites**: macOS Sequoia (26.0+) on Apple Silicon with Xcode Command Line Tools.
 
 ```bash
 git clone https://github.com/bhubbard/apfel-rs.git
@@ -78,9 +99,6 @@ cargo test
 
 # Build optimized release binary
 cargo build --release
-
-# Install to /usr/local/bin or ~/.cargo/bin
-cargo install --path .
 ```
 
 ---
