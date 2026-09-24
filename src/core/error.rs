@@ -89,6 +89,17 @@ impl ApfelError {
         }
     }
 
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::RateLimited(_) => true,
+            Self::ModelUnavailable(msg) => {
+                let lower = msg.to_lowercase();
+                lower.contains("busy") || lower.contains("concurrent") || lower.contains("assets") || lower.contains("temporarily")
+            }
+            _ => false,
+        }
+    }
+
     pub fn to_openai_json(&self) -> OpenAIErrorWrapper {
         let error_type = match self {
             Self::Usage(_) => "invalid_request_error",

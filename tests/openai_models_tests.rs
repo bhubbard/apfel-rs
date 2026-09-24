@@ -48,3 +48,51 @@ fn test_message_content_helpers() {
     };
     assert_eq!(msg2.text_content(), "Line 1\nLine 2");
 }
+
+#[test]
+fn test_chat_completion_response_serialization() {
+    let resp = ChatCompletionResponse {
+        id: "chatcmpl_abc".to_string(),
+        object: "chat.completion".to_string(),
+        created: 1700000000,
+        model: "apple-foundationmodel".to_string(),
+        choices: vec![ChatCompletionChoice {
+            index: 0,
+            message: OpenAIMessage::assistant("This is a response."),
+            finish_reason: "stop".to_string(),
+        }],
+        usage: Usage {
+            prompt_tokens: 15,
+            completion_tokens: 5,
+            total_tokens: 20,
+        },
+    };
+
+    let json = serde_json::to_string(&resp).unwrap();
+    assert!(json.contains(r#""id":"chatcmpl_abc""#));
+    assert!(json.contains(r#""finish_reason":"stop""#));
+    assert!(json.contains(r#""total_tokens":20"#));
+}
+
+#[test]
+fn test_chat_completion_chunk_sse_format() {
+    let chunk = ChatCompletionChunk {
+        id: "chatcmpl_chunk1".to_string(),
+        object: "chat.completion.chunk".to_string(),
+        created: 1700000000,
+        model: "apple-foundationmodel".to_string(),
+        choices: vec![ChatCompletionChunkChoice {
+            index: 0,
+            delta: ChatCompletionChunkDelta {
+                role: None,
+                content: Some("token".to_string()),
+                tool_calls: None,
+            },
+            finish_reason: None,
+        }],
+    };
+
+    let json = serde_json::to_string(&chunk).unwrap();
+    assert!(json.contains(r#""content":"token""#));
+    assert!(json.contains(r#""chat.completion.chunk""#));
+}

@@ -232,3 +232,48 @@ impl ToolOutputTruncator {
         (format!("{}{}{}", head, marker, tail), true)
     }
 }
+
+pub struct StreamingToolCallGate;
+
+impl StreamingToolCallGate {
+    /// Determines whether the accumulated prefix could be the start of a tool-call JSON object.
+    /// Returns true if the streamer should buffer/hold, or false if it should immediately flush.
+    pub fn is_plausible_tool_call_prefix(text: &str) -> bool {
+        let trimmed = text.trim_start();
+        if trimmed.is_empty() {
+            return true;
+        }
+
+        // Fenced blocks
+        if trimmed.starts_with('`') {
+            if trimmed.starts_with("```json") {
+                let after = trimmed["```json".len()..].trim_start();
+                if after.is_empty() {
+                    return true;
+                }
+                return Self::is_plausible_tool_call_prefix(after);
+            }
+            if trimmed.starts_with("```") {
+                let after = trimmed["```".len()..].trim_start();
+                if after.is_empty() {
+                    return true;
+                }
+                return Self::is_plausible_tool_call_prefix(after);
+            }
+            return true; // partial backticks "`", "``"
+        }
+
+        if trimmed.starts_with('{') {
+            let target = "{\"tool_calls\"";
+            if target.starts_with(trimmed) || trimmed.starts_with(target) {
+                return true;
+            }
+            let no_spaces: String = trimmed.chars().filter(|c| !c.is_whitespace()).collect();
+            if target.starts_with(&no_spaces) || no_spaces.starts_with(target) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
