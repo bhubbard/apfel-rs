@@ -2,6 +2,7 @@
 
 > High-performance Rust fork of [apfel](https://github.com/Arthur-Ficial/apfel): Apple Intelligence on-device FoundationModels from the command line and OpenAI-compatible server.
 
+[![Homebrew](https://img.shields.io/badge/homebrew-bhubbard%2Ftap-blue.svg)](https://github.com/bhubbard/homebrew-tap)
 [![crates.io](https://img.shields.io/crates/v/apfel-rs.svg)](https://crates.io/crates/apfel-rs)
 [![npm](https://img.shields.io/npm/v/apfel-rs.svg)](https://www.npmjs.com/package/apfel-rs)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
@@ -65,18 +66,29 @@ Rigorous stress testing conducted on Apple Silicon (macOS Sequoia) comparing the
 ## Installation & Setup
 
 ### 1. Homebrew (macOS Recommended)
-Install via the official tap:
+Install via the official tap (`bhubbard/tap`):
 
 ```bash
+# Tap and install in one step
 brew install bhubbard/tap/apfel-rs
 
-# Command is now available globally
+# Command is now available globally with automatic shell completions
 apfel --model-info
 ```
 
-Run as a background system service (starts automatically on login):
+Run as a persistent background daemon (starts automatically on login):
 ```bash
+# Start background server on localhost:32185
 brew services start apfel-rs
+
+# Check server status
+brew services info apfel-rs
+
+# View live daemon logs
+tail -f /opt/homebrew/var/log/apfel.log
+
+# Stop background server
+brew services stop apfel-rs
 ```
 
 ### 2. Instant Run via NPX (Zero Setup)
@@ -167,7 +179,27 @@ apfel --chat
 
 ## OpenAI-Compatible Server
 
-Start the local server daemon:
+### Mode A: Background Daemon via Homebrew (Recommended)
+
+When installed via Homebrew, manage `apfel` as a persistent background system daemon that starts automatically on macOS login:
+
+```bash
+# Start background server daemon
+brew services start apfel-rs
+
+# Inspect server status
+brew services info apfel-rs
+
+# Monitor live server logs
+tail -f /opt/homebrew/var/log/apfel.log
+
+# Stop background server
+brew services stop apfel-rs
+```
+
+### Mode B: Manual Foreground Server
+
+Start the local server directly in your current terminal:
 
 ```bash
 apfel --serve --port 8080 --host 127.0.0.1
