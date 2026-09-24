@@ -79,3 +79,82 @@ fn test_default_engine_instantiation() {
     assert!(engine.context_size() > 0);
 }
 
+#[tokio::test]
+async fn test_session_manager_tool_calling_loop_and_resolution() {
+    let tool_call_json = r#"{
+        "tool_calls": [
+            {
+                "id": "call_calc",
+                "type": "function",
+                "function": {
+                    "name": "calculator",
+                    "arguments": "{\"expr\": \"2+2\"}"
+                }
+            }
+        ]
+    }"#;
+
+    let mock = Arc::new(MockEngine::with_responses(vec![
+        tool_call_json,
+        "The calculator returned error: No tool handler registered for 'calculator'.",
+    ]));
+
+    let mgr = SessionManager::new(mock, None);
+    let messages = vec![
+        OpenAIMessage::system("System instructions"),
+        OpenAIMessage::user("Calculate 2+2"),
+    ];
+
+    let tools = vec![OpenAITool {
+        tool_type: "function".to_string(),
+        function: FunctionDefinition {
+            name: "calculator".to_string(),
+            description: Some("Performs math".to_string()),
+            parameters: None,
+        },
+    }];
+
+    let config = ContextConfig::default();
+    let res = mgr
+        .process_messages(&messages, Some(&tools), &config, None, None, None, None)
+        .await
+        .expect("Tool calling loop failed");
+
+    assert_eq!(res.tool_log.len(), 1);
+    assert_eq!(res.tool_log[0].name, "calculator");
+    assert!(res.tool_log[0].is_error);
+    assert!(res.content.contains("No tool handler registered"));
+}
+
+#[tokio::test]
+async fn test_session_manager_reprompt_cap() {
+    let tool_call_json = r#"{
+        "tool_calls": [
+            {
+                "id": "call_inf",
+                "type": "function",
+                "function": {
+                    "name": "inf_tool",
+                    "arguments": "{}"
+                }
+            }
+        ]
+    }"#;
+    let infinite_tool_calls = MockEngine::with_response(tool_call_json);
+    let mgr = SessionManager::new(Arc::new(infinite_tool_calls), None);
+    let messages = vec![OpenAIMessage::user("Run loop")];
+    let config = ContextConfig::default();
+
+    let res = mgr
+        .process_messages(&messages, None, &config, None, None, None, None)
+        .await;
+
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        apfel::core::error::ApfelError::ToolExecution(msg) => {
+            assert!(msg.contains("round cap"));
+        }
+        other => panic!("Expected ToolExecution error with round cap, got {:?}", other),
+    }
+}
+

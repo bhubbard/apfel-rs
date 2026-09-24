@@ -303,7 +303,36 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         }
     }
 
-    if prompt_text.trim().is_empty() {
+    // Read messages file or stdin if specified
+    let messages = if let Some(msg_path) = &args.messages {
+        let content = if msg_path == "-" {
+            let mut buf = String::new();
+            if let Err(e) = io::stdin().read_to_string(&mut buf) {
+                eprintln!("Error reading messages from stdin: {}", e);
+                return ApfelExitCodes::USAGE_ERROR;
+            }
+            buf
+        } else {
+            match fs::read_to_string(msg_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Error reading messages file '{}': {}", msg_path, e);
+                    return ApfelExitCodes::USAGE_ERROR;
+                }
+            }
+        };
+        match crate::core::messages_input::MessagesInput::decode(&content) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("Messages error: {}", e);
+                return ApfelExitCodes::USAGE_ERROR;
+            }
+        }
+    } else {
+        None
+    };
+
+    if prompt_text.trim().is_empty() && messages.is_none() {
         eprintln!("No prompt provided. Run 'apfel --help' for usage.");
         return ApfelExitCodes::USAGE_ERROR;
     }
@@ -348,7 +377,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     let req = GenerateRequest {
         prompt: prompt_text,
         system_prompt: if system_instructions.is_empty() { None } else { Some(system_instructions) },
-        messages: None,
+        messages: messages.clone(),
         temperature: args.temperature,
         top_p: args.top_p,
         max_tokens: args.max_tokens,
@@ -391,10 +420,12 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             permissive: args.permissive,
         };
 
-        let messages = vec![crate::core::models::OpenAIMessage::user(&req.prompt)];
+        let active_messages = messages.unwrap_or_else(|| {
+            vec![crate::core::models::OpenAIMessage::user(&req.prompt)]
+        });
         let res = match session_mgr
             .process_messages(
-                &messages,
+                &active_messages,
                 None,
                 &config,
                 args.temperature,

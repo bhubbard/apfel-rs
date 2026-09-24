@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 
 pub struct MockEngine {
     pub response: String,
+    pub responses: std::sync::Mutex<Vec<String>>,
     pub available: bool,
     pub context_window: usize,
 }
@@ -17,6 +18,7 @@ impl MockEngine {
     pub fn new() -> Self {
         Self {
             response: "This is a response from the mock backend engine.".to_string(),
+            responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
         }
@@ -25,6 +27,20 @@ impl MockEngine {
     pub fn with_response(response: impl Into<String>) -> Self {
         Self {
             response: response.into(),
+            responses: std::sync::Mutex::new(Vec::new()),
+            available: true,
+            context_window: 4096,
+        }
+    }
+
+    pub fn with_responses<I, S>(responses: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            response: String::new(),
+            responses: std::sync::Mutex::new(responses.into_iter().map(Into::into).collect()),
             available: true,
             context_window: 4096,
         }
@@ -63,7 +79,15 @@ impl BackendEngine for MockEngine {
         }
 
         let (tx, rx) = mpsc::channel(32);
-        let resp = self.response.clone();
+        let resp = if let Ok(mut lock) = self.responses.lock() {
+            if !lock.is_empty() {
+                lock.remove(0)
+            } else {
+                self.response.clone()
+            }
+        } else {
+            self.response.clone()
+        };
 
         tokio::spawn(async move {
             let words: Vec<&str> = resp.split_whitespace().collect();
@@ -81,8 +105,17 @@ impl BackendEngine for MockEngine {
         if !self.available {
             return Err(ApfelError::ModelUnavailable("Mock engine is unavailable".to_string()));
         }
+        let content = if let Ok(mut lock) = self.responses.lock() {
+            if !lock.is_empty() {
+                lock.remove(0)
+            } else {
+                self.response.clone()
+            }
+        } else {
+            self.response.clone()
+        };
         Ok(GenerateResponse {
-            content: self.response.clone(),
+            content,
             finish_reason: "stop".to_string(),
         })
     }

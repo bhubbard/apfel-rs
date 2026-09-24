@@ -163,3 +163,86 @@ fn test_context_config_defaults_and_serde() {
     assert_eq!(default_cfg, deserialized);
 }
 
+#[test]
+fn test_context_strategy_strict_success() {
+    let messages = vec![
+        OpenAIMessage::system("System"),
+        OpenAIMessage::user("Short message"),
+    ];
+
+    let config = ContextConfig {
+        strategy: ContextStrategy::Strict,
+        max_turns: None,
+        output_reserve: 0,
+        permissive: false,
+    };
+
+    let result = ContextManager::trim_messages(&messages, 100, &config, |s| s.len());
+    assert!(result.is_some());
+    let trimmed = result.unwrap();
+    assert_eq!(trimmed.len(), 2);
+    assert_eq!(trimmed[0].role, "system");
+    assert_eq!(trimmed[1].text_content(), "Short message");
+}
+
+#[test]
+fn test_context_developer_role_instruction() {
+    let messages = vec![
+        OpenAIMessage::developer("You are a helpful coding assistant"),
+        OpenAIMessage::user("Hello"),
+    ];
+
+    let config = ContextConfig::default();
+    let trimmed = ContextManager::trim_messages(&messages, 100, &config, |s| s.len())
+        .expect("Failed to trim developer role message");
+
+    assert_eq!(trimmed.len(), 2);
+    assert_eq!(trimmed[0].role, "developer");
+    assert_eq!(trimmed[1].role, "user");
+}
+
+#[test]
+fn test_context_sliding_window_fewer_turns() {
+    let messages = vec![
+        OpenAIMessage::system("System"),
+        OpenAIMessage::user("Turn 1"),
+        OpenAIMessage::assistant("Turn 2"),
+    ];
+
+    let config = ContextConfig {
+        strategy: ContextStrategy::SlidingWindow,
+        max_turns: Some(5), // More than the 2 conversation turns
+        output_reserve: 0,
+        permissive: false,
+    };
+
+    let trimmed = ContextManager::trim_messages(&messages, 100, &config, |s| s.len())
+        .expect("Trimming failed");
+
+    assert_eq!(trimmed.len(), 3);
+    assert_eq!(trimmed[1].text_content(), "Turn 1");
+    assert_eq!(trimmed[2].text_content(), "Turn 2");
+}
+
+#[test]
+fn test_context_summarize_all_fit() {
+    let messages = vec![
+        OpenAIMessage::system("System"),
+        OpenAIMessage::user("Hi"),
+    ];
+
+    let config = ContextConfig {
+        strategy: ContextStrategy::Summarize,
+        max_turns: None,
+        output_reserve: 0,
+        permissive: false,
+    };
+
+    let trimmed = ContextManager::trim_messages(&messages, 100, &config, |s| s.len())
+        .expect("Trimming failed");
+
+    // All messages fit, so no note should be injected
+    assert_eq!(trimmed.len(), 2);
+    assert!(!trimmed.iter().any(|m| m.text_content().contains("prior messages were summarized")));
+}
+

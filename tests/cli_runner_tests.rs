@@ -132,3 +132,25 @@ async fn test_cli_runner_count_tokens_strict_overflow() {
     let args = CliArgs::parse_from(&["apfel", "--count-tokens", "--strict", &huge_prompt]);
     assert_eq!(run_cli_with_engine(args, mock).await, ApfelExitCodes::CONTEXT_OVERFLOW);
 }
+
+#[tokio::test]
+async fn test_cli_runner_messages_flag() {
+    let mock = Arc::new(MockEngine::with_response("Hello from messages response"));
+    let dir = tempfile::tempdir().unwrap();
+
+    // Valid messages JSON array
+    let msg_file = dir.path().join("messages.json");
+    std::fs::write(&msg_file, r#"[{"role": "user", "content": "Hello from file"}]"#).unwrap();
+    let args_good = CliArgs::parse_from(&["apfel", "--messages", msg_file.to_str().unwrap(), "--no-stream"]);
+    assert_eq!(run_cli_with_engine(args_good, mock.clone()).await, ApfelExitCodes::SUCCESS);
+
+    // Missing messages file
+    let args_missing = CliArgs::parse_from(&["apfel", "--messages", "/nonexistent/messages.json", "--no-stream"]);
+    assert_eq!(run_cli_with_engine(args_missing, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+
+    // Corrupt messages file
+    let bad_msg_file = dir.path().join("bad_messages.json");
+    std::fs::write(&bad_msg_file, r#"[{"role": "unknown_role", "content": "Hello"}]"#).unwrap();
+    let args_bad = CliArgs::parse_from(&["apfel", "--messages", bad_msg_file.to_str().unwrap(), "--no-stream"]);
+    assert_eq!(run_cli_with_engine(args_bad, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+}

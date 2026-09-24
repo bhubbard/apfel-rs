@@ -75,7 +75,73 @@ fn test_error_display_strings() {
         "model unavailable: disabled"
     );
     assert_eq!(
+        ApfelError::Guardrail("safety trigger".into()).to_string(),
+        "guardrail triggered: safety trigger"
+    );
+    assert_eq!(
+        ApfelError::ContextOverflow("overflow".into()).to_string(),
+        "context window overflow: overflow"
+    );
+    assert_eq!(
+        ApfelError::RateLimited("rate limited".into()).to_string(),
+        "rate limited: rate limited"
+    );
+    assert_eq!(
+        ApfelError::ToolExecution("tool crashed".into()).to_string(),
+        "tool execution error: tool crashed"
+    );
+    assert_eq!(
+        ApfelError::MCP("mcp timeout".into()).to_string(),
+        "mcp error: mcp timeout"
+    );
+    assert_eq!(
         ApfelError::NoCodeFound.to_string(),
         "no code block found in response"
     );
+    assert_eq!(
+        ApfelError::NotImplemented("feature".into()).to_string(),
+        "not implemented: feature"
+    );
+    assert_eq!(
+        ApfelError::Unauthorized("bad key".into()).to_string(),
+        "unauthorized: bad key"
+    );
+    assert_eq!(
+        ApfelError::ForbiddenOrigin("bad site".into()).to_string(),
+        "forbidden origin: bad site"
+    );
+    assert_eq!(
+        ApfelError::Runtime("segfault".into()).to_string(),
+        "runtime error: segfault"
+    );
+}
+
+#[test]
+fn test_error_http_status_and_openai_json_completeness() {
+    assert_eq!(ApfelError::Guardrail("unsafe".into()).http_status(), 400);
+    assert_eq!(ApfelError::ContextOverflow("too long".into()).http_status(), 400);
+
+    let not_impl = ApfelError::NotImplemented("audio".into());
+    assert_eq!(not_impl.to_openai_json().error.type_name, "not_implemented_error");
+
+    let runtime = ApfelError::Runtime("internal".into());
+    assert_eq!(runtime.to_openai_json().error.type_name, "api_error");
+}
+
+#[test]
+fn test_error_retryability_matrix() {
+    // Retryable
+    assert!(ApfelError::RateLimited("too fast".into()).is_retryable());
+    assert!(ApfelError::ModelUnavailable("System busy with another task".into()).is_retryable());
+    assert!(ApfelError::ModelUnavailable("Too many concurrent requests".into()).is_retryable());
+    assert!(ApfelError::ModelUnavailable("Model assets downloading".into()).is_retryable());
+    assert!(ApfelError::ModelUnavailable("Service temporarily unavailable".into()).is_retryable());
+
+    // Non-retryable
+    assert!(!ApfelError::ModelUnavailable("Requires Apple Silicon M1+".into()).is_retryable());
+    assert!(!ApfelError::Usage("Missing param".into()).is_retryable());
+    assert!(!ApfelError::Guardrail("Flagged".into()).is_retryable());
+    assert!(!ApfelError::ContextOverflow("Too long".into()).is_retryable());
+    assert!(!ApfelError::NoCodeFound.is_retryable());
+    assert!(!ApfelError::Runtime("Crash".into()).is_retryable());
 }

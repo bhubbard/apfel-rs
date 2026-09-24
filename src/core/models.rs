@@ -101,6 +101,16 @@ impl OpenAIMessage {
         }
     }
 
+    pub fn developer(content: impl Into<String>) -> Self {
+        Self {
+            role: "developer".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }
+    }
+
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),

@@ -184,5 +184,103 @@ async fn test_server_routes_and_security() {
         .await
         .expect("Response format request failed");
     assert_eq!(res.status(), 200);
+
+    // 12. Responses endpoint with background=true -> 501 Not Implemented
+    let bg_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "input": "Async work",
+        "background": true
+    });
+    let res = client
+        .post(format!("{}/v1/responses", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&bg_body)
+        .send()
+        .await
+        .expect("Background request failed");
+    assert_eq!(res.status(), 501);
+
+    // 13. Responses endpoint with previous_response_id -> 501 Not Implemented
+    let prev_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "input": "Continuation",
+        "previous_response_id": "resp_abc"
+    });
+    let res = client
+        .post(format!("{}/v1/responses", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&prev_body)
+        .send()
+        .await
+        .expect("Previous response id request failed");
+    assert_eq!(res.status(), 501);
+
+    // 14. Responses endpoint with structured items array input
+    let items_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "instructions": "Be brief",
+        "input": [
+            { "role": "user", "content": "Hello in items format" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/responses", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&items_body)
+        .send()
+        .await
+        .expect("Items input request failed");
+    assert_eq!(res.status(), 200);
+
+    // 15. Responses endpoint with null input
+    let null_input_body = serde_json::json!({
+        "model": "apple-foundationmodel"
+    });
+    let res = client
+        .post(format!("{}/v1/responses", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&null_input_body)
+        .send()
+        .await
+        .expect("Null input request failed");
+    assert_eq!(res.status(), 200);
+
+    // 16. Chat completions with tool_choice = "none"
+    let no_tool_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "No tools" }],
+        "tools": [{
+            "type": "function",
+            "function": { "name": "dummy", "description": "dummy tool" }
+        }],
+        "tool_choice": "none"
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&no_tool_body)
+        .send()
+        .await
+        .expect("No tool request failed");
+    assert_eq!(res.status(), 200);
+
+    // 17. Streaming chat completion with stop sequence
+    let stream_stop_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "Stream with stop" }],
+        "stream": true,
+        "stop": ["from"]
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&stream_stop_body)
+        .send()
+        .await
+        .expect("Streaming stop request failed");
+    assert_eq!(res.status(), 200);
+    let stream_stop_text = res.text().await.unwrap();
+    assert!(stream_stop_text.contains("chat.completion.chunk"));
+    assert!(stream_stop_text.contains("[DONE]"));
 }
 
