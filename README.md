@@ -56,7 +56,7 @@ Rigorous stress testing conducted on Apple Silicon (macOS Sequoia) comparing the
 ### Key Takeaways
 - **Zero GC/Pause Spikes**: Swift experienced tail latency jitter up to 748 ms during token counting runs, whereas Rust's deterministic memory management never exceeded 91 ms.
 - **Axum & Tokio Web Scalability**: The Rust server handles **4,160 req/sec** with sub-10ms p95 latency under high concurrency, quadrupling Swift's Hummingbird engine performance.
-- **Reproduce Benchmarks**: Run `python3 intense_benchmark.py` in the repo root.
+- **Reproduce Benchmarks**: Run `cargo run --release --example bench` in the repo root.
 
 ---
 
