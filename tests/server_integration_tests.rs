@@ -88,4 +88,57 @@ async fn test_server_routes_and_security() {
     assert_eq!(res.status(), 200);
     let chat_resp: ChatCompletionResponse = res.json().await.expect("Failed to deserialize response");
     assert_eq!(chat_resp.choices[0].message.text_content(), "Hello from mock server!");
+
+    // 6. Stop sequence in non-streaming POST
+    let stop_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "Hi" }],
+        "stop": ["from"]
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&stop_body)
+        .send()
+        .await
+        .expect("Stop sequence request failed");
+    assert_eq!(res.status(), 200);
+    let stop_resp: ChatCompletionResponse = res.json().await.unwrap();
+    assert_eq!(stop_resp.choices[0].message.text_content(), "Hello ");
+    assert_eq!(stop_resp.choices[0].finish_reason, "stop");
+
+    // 7. Streaming chat completion POST
+    let stream_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "Stream please" }],
+        "stream": true
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&stream_body)
+        .send()
+        .await
+        .expect("Streaming request failed");
+    assert_eq!(res.status(), 200);
+    let stream_text = res.text().await.unwrap();
+    assert!(stream_text.contains("chat.completion.chunk"));
+    assert!(stream_text.contains("[DONE]"));
+
+    // 8. Conflicting tokens -> 400 Bad Request
+    let conflict_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "Conflict test" }],
+        "max_tokens": 50,
+        "max_completion_tokens": 100
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&conflict_body)
+        .send()
+        .await
+        .expect("Conflict request failed");
+    assert_eq!(res.status(), 400);
 }
+

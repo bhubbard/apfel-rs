@@ -57,13 +57,13 @@ extern "C" fn on_bridge_chunk(
     }
 
     if !chunk.is_null() {
-        let text = unsafe { CStr::from_ptr(chunk).to_string_lossy().to_string() };
+        let text = unsafe { CStr::from_ptr(chunk).to_str().unwrap_or("").to_string() };
         let _ = sender.send(StreamChunk::Delta(text));
     }
 
     if is_done {
         let reason = if !finish_reason.is_null() {
-            unsafe { CStr::from_ptr(finish_reason).to_string_lossy().to_string() }
+            unsafe { CStr::from_ptr(finish_reason).to_str().unwrap_or("stop").to_string() }
         } else {
             "stop".to_string()
         };

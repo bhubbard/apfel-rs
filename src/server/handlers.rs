@@ -143,43 +143,81 @@ pub async fn chat_completions_handler(
         let stream_id = format!("chatcmpl-{}", Uuid::new_v4());
         let model_name = req.model.clone();
 
+        let stop_seqs: Vec<String> = req.stop_sequences().into_iter().map(|s| s.to_string()).collect();
         let stream = async_stream::stream! {
             let created = chrono::Utc::now().timestamp();
+            let mut accumulated = String::new();
+            let mut stopped = false;
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(delta_text) => {
-                        let chunk_obj = ChatCompletionChunk {
-                            id: stream_id.clone(),
-                            object: "chat.completion.chunk".to_string(),
-                            created,
-                            model: model_name.clone(),
-                            choices: vec![ChatCompletionChunkChoice {
-                                index: 0,
-                                delta: ChatCompletionChunkDelta {
-                                    role: None,
-                                    content: Some(delta_text),
-                                    tool_calls: None,
-                                },
-                                finish_reason: None,
-                            }],
-                        };
-                        let json = serde_json::to_string(&chunk_obj).unwrap_or_default();
-                        yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", json));
+                        if stopped {
+                            continue;
+                        }
+                        let mut emit_text = delta_text;
+                        accumulated.push_str(&emit_text);
+                        if !stop_seqs.is_empty() {
+                            for seq in &stop_seqs {
+                                if let Some(pos) = accumulated.find(seq) {
+                                    let keep_len = pos.saturating_sub(accumulated.len() - emit_text.len());
+                                    emit_text.truncate(keep_len);
+                                    stopped = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if !emit_text.is_empty() {
+                            let chunk_obj = ChatCompletionChunk {
+                                id: stream_id.clone(),
+                                object: "chat.completion.chunk".to_string(),
+                                created,
+                                model: model_name.clone(),
+                                choices: vec![ChatCompletionChunkChoice {
+                                    index: 0,
+                                    delta: ChatCompletionChunkDelta {
+                                        role: None,
+                                        content: Some(emit_text),
+                                        tool_calls: None,
+                                    },
+                                    finish_reason: None,
+                                }],
+                            };
+                            let json = serde_json::to_string(&chunk_obj).unwrap_or_default();
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", json));
+                        }
+                        if stopped {
+                            let final_chunk = ChatCompletionChunk {
+                                id: stream_id.clone(),
+                                object: "chat.completion.chunk".to_string(),
+                                created,
+                                model: model_name.clone(),
+                                choices: vec![ChatCompletionChunkChoice {
+                                    index: 0,
+                                    delta: ChatCompletionChunkDelta::default(),
+                                    finish_reason: Some("stop".to_string()),
+                                }],
+                            };
+                            let json = serde_json::to_string(&final_chunk).unwrap_or_default();
+                            yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", json));
+                            break;
+                        }
                     }
                     StreamChunk::Done { finish_reason } => {
-                        let final_chunk = ChatCompletionChunk {
-                            id: stream_id.clone(),
-                            object: "chat.completion.chunk".to_string(),
-                            created,
-                            model: model_name.clone(),
-                            choices: vec![ChatCompletionChunkChoice {
-                                index: 0,
-                                delta: ChatCompletionChunkDelta::default(),
-                                finish_reason: Some(finish_reason),
-                            }],
-                        };
-                        let json = serde_json::to_string(&final_chunk).unwrap_or_default();
-                        yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", json));
+                        if !stopped {
+                            let final_chunk = ChatCompletionChunk {
+                                id: stream_id.clone(),
+                                object: "chat.completion.chunk".to_string(),
+                                created,
+                                model: model_name.clone(),
+                                choices: vec![ChatCompletionChunkChoice {
+                                    index: 0,
+                                    delta: ChatCompletionChunkDelta::default(),
+                                    finish_reason: Some(finish_reason),
+                                }],
+                            };
+                            let json = serde_json::to_string(&final_chunk).unwrap_or_default();
+                            yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", json));
+                        }
                         break;
                     }
                     StreamChunk::Error(e) => {

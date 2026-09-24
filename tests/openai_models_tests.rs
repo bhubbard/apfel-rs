@@ -148,3 +148,28 @@ fn test_stop_sequences_single_and_multiple() {
     assert_eq!(req2.stop_sequences(), vec!["\nObservation:", "Human:"]);
 }
 
+#[test]
+fn test_tool_choice_parsing_and_modes() {
+    // Mode: "none"
+    let json_none = r#"{"model":"m","messages":[],"tool_choice":"none"}"#;
+    let req_none: ChatCompletionRequest = serde_json::from_str(json_none).unwrap();
+    assert_eq!(req_none.tool_choice, Some(ToolChoice::Mode("none".to_string())));
+
+    // Mode: "auto"
+    let json_auto = r#"{"model":"m","messages":[],"tool_choice":"auto"}"#;
+    let req_auto: ChatCompletionRequest = serde_json::from_str(json_auto).unwrap();
+    assert_eq!(req_auto.tool_choice, Some(ToolChoice::Mode("auto".to_string())));
+
+    // Named function choice
+    let json_named = r#"{"model":"m","messages":[],"tool_choice":{"type":"function","function":{"name":"fetch_weather"}}}"#;
+    let req_named: ChatCompletionRequest = serde_json::from_str(json_named).unwrap();
+    match req_named.tool_choice {
+        Some(ToolChoice::Named { choice_type, function }) => {
+            assert_eq!(choice_type, "function");
+            assert_eq!(function.name, "fetch_weather");
+        }
+        _ => panic!("Expected Named tool choice"),
+    }
+}
+
+

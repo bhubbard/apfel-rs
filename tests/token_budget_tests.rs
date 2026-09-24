@@ -65,3 +65,19 @@ fn test_fallback_token_counting() {
     counter.reset_fallback_flag();
     assert!(!counter.did_fallback());
 }
+
+#[test]
+fn test_token_counter_throughput_benchmark() {
+    let counter = TokenCounter::new();
+    let text = "Performance stress testing for token hash cache in apfel-rs";
+
+    let start = std::time::Instant::now();
+    for _ in 0..10_000 {
+        let count = counter.count_cached(text, |s| s.len() / 4);
+        assert!(count > 0);
+    }
+    let duration = start.elapsed();
+    // 10,000 lookups should take well under 100ms with u64 hash lookups
+    assert!(duration.as_millis() < 100, "10k hash cache lookups took {:?}", duration);
+}
+

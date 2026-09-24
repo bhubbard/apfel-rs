@@ -20,6 +20,7 @@ fn main() {
         let status = Command::new("swiftc")
             .arg("-parse-as-library")
             .arg("-O")
+            .arg("-whole-module-optimization")
             .arg("-c")
             .arg(&bridge_swift)
             .arg("-o")

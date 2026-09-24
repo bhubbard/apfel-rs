@@ -3,14 +3,23 @@
 // Part of apfel-rs
 // ============================================================================
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
+
+#[inline]
+fn hash_key(text: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
 
 pub struct TokenCounter {
     max_context_seen: AtomicUsize,
     runtime_fell_back: AtomicBool,
-    cache: RwLock<HashMap<String, usize>>,
+    cache: RwLock<HashMap<u64, usize>>,
 }
 
 impl TokenCounter {
@@ -42,7 +51,7 @@ impl TokenCounter {
         self.context_size().saturating_sub(reserved_for_output)
     }
 
-    /// Fast cached token count lookup
+    /// Fast cached token count lookup with zero string allocations
     pub fn count_cached<F>(&self, text: &str, compute_fn: F) -> usize
     where
         F: FnOnce(&str) -> usize,
@@ -51,9 +60,11 @@ impl TokenCounter {
             return 0;
         }
 
+        let key = hash_key(text);
+
         // Fast path: read lock
         if let Ok(cache) = self.cache.read() {
-            if let Some(&count) = cache.get(text) {
+            if let Some(&count) = cache.get(&key) {
                 return count;
             }
         }
@@ -61,10 +72,10 @@ impl TokenCounter {
         // Compute and store in cache
         let count = compute_fn(text);
         if let Ok(mut cache) = self.cache.write() {
-            if cache.len() > 1000 {
+            if cache.len() > 2000 {
                 cache.clear(); // Keep bounded memory
             }
-            cache.insert(text.to_string(), count);
+            cache.insert(key, count);
         }
         count
     }
