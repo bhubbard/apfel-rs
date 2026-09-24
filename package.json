@@ -1,0 +1,43 @@
+{
+  "name": "apfel-rs",
+  "version": "0.1.0",
+  "description": "High-performance Rust fork of apfel: Apple Intelligence on-device model from the command line and OpenAI-compatible server",
+  "main": "bin/apfel.js",
+  "bin": {
+    "apfel": "bin/apfel.js",
+    "apfel-rs": "bin/apfel.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "scripts": {
+    "prepublishOnly": "cargo build --release && cp target/release/apfel bin/apfel-bin",
+    "test": "node bin/apfel.js --version"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhubbard/apfel-rs.git"
+  },
+  "keywords": [
+    "apple-intelligence",
+    "foundation-models",
+    "llm",
+    "openai",
+    "mcp",
+    "cli"
+  ],
+  "author": "Brandon Hubbard",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bhubbard/apfel-rs/issues"
+  },
+  "homepage": "https://github.com/bhubbard/apfel-rs#readme"
+}

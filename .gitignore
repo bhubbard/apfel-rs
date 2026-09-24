@@ -1,1 +1,3 @@
 /target
+bin/apfel-bin
+*.tgz
