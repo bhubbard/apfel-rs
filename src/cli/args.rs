@@ -137,4 +137,8 @@ pub struct CliArgs {
     /// Run local latency and throughput benchmark
     #[arg(long = "benchmark")]
     pub benchmark: bool,
+
+    /// Generate shell completion script (bash, zsh, fish, powershell)
+    #[arg(long = "completions", value_name = "SHELL")]
+    pub completions: Option<String>,
 }

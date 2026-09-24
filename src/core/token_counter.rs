@@ -1,13 +1,16 @@
 // ============================================================================
-// token_counter.rs — Token counting and context window tracking
+// token_counter.rs — Token counting, context window tracking, and LRU cache
 // Part of apfel-rs
 // ============================================================================
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::RwLock;
 
 pub struct TokenCounter {
     max_context_seen: AtomicUsize,
     runtime_fell_back: AtomicBool,
+    cache: RwLock<HashMap<String, usize>>,
 }
 
 impl TokenCounter {
@@ -17,6 +20,7 @@ impl TokenCounter {
         Self {
             max_context_seen: AtomicUsize::new(Self::DEFAULT_CONTEXT_FLOOR),
             runtime_fell_back: AtomicBool::new(false),
+            cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -36,6 +40,33 @@ impl TokenCounter {
 
     pub fn input_budget(&self, reserved_for_output: usize) -> usize {
         self.context_size().saturating_sub(reserved_for_output)
+    }
+
+    /// Fast cached token count lookup
+    pub fn count_cached<F>(&self, text: &str, compute_fn: F) -> usize
+    where
+        F: FnOnce(&str) -> usize,
+    {
+        if text.is_empty() {
+            return 0;
+        }
+
+        // Fast path: read lock
+        if let Ok(cache) = self.cache.read() {
+            if let Some(&count) = cache.get(text) {
+                return count;
+            }
+        }
+
+        // Compute and store in cache
+        let count = compute_fn(text);
+        if let Ok(mut cache) = self.cache.write() {
+            if cache.len() > 1000 {
+                cache.clear(); // Keep bounded memory
+            }
+            cache.insert(text.to_string(), count);
+        }
+        count
     }
 
     pub fn fallback_count(&self, text: &str) -> usize {

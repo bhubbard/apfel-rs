@@ -27,6 +27,11 @@ pub async fn run_cli(args: CliArgs) -> i32 {
 
     let engine = default_engine();
 
+    // 0. Completions Generator
+    if let Some(shell_name) = &args.completions {
+        return run_completions(shell_name);
+    }
+
     // 1. Model Info Mode
     if args.model_info {
         return run_model_info(engine.as_ref());
@@ -61,6 +66,26 @@ pub async fn run_cli(args: CliArgs) -> i32 {
 
     // 6. Generation (Single or Stream) Mode
     run_generation(args, engine).await
+}
+
+fn run_completions(shell_name: &str) -> i32 {
+    use clap::CommandFactory;
+    use clap_complete::Shell;
+
+    let shell = match shell_name.to_lowercase().as_str() {
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        "powershell" => Shell::PowerShell,
+        _ => {
+            eprintln!("Unsupported shell '{}'. Supported: bash, zsh, fish, powershell", shell_name);
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+    };
+
+    let mut cmd = CliArgs::command();
+    clap_complete::generate(shell, &mut cmd, "apfel", &mut io::stdout());
+    ApfelExitCodes::SUCCESS
 }
 
 fn run_model_info(engine: &dyn BackendEngine) -> i32 {

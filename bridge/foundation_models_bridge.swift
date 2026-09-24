@@ -14,16 +14,21 @@ public typealias BridgeStreamCallback = @convention(c) (
     UnsafeMutableRawPointer? // user_data context pointer
 ) -> Void
 
+// MARK: - Prewarmed Model Singletons
+
+private let defaultModel = SystemLanguageModel(guardrails: .default)
+private let permissiveModel = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+
 // MARK: - Model Inspection
 
 @_cdecl("apfel_bridge_is_available")
 public func apfel_bridge_is_available() -> Bool {
-    return SystemLanguageModel.default.isAvailable
+    return defaultModel.isAvailable
 }
 
 @_cdecl("apfel_bridge_context_size")
 public func apfel_bridge_context_size() -> Int32 {
-    let size = SystemLanguageModel.default.contextSize
+    let size = defaultModel.contextSize
     return Int32(size > 0 ? size : 4096)
 }
 
@@ -36,7 +41,7 @@ public func apfel_bridge_token_count(text: UnsafePointer<CChar>) -> Int32 {
         var count = Int32(max(1, str.count / 4))
         Task {
             do {
-                let n = try await SystemLanguageModel.default.tokenCount(for: str)
+                let n = try await defaultModel.tokenCount(for: str)
                 count = Int32(n)
             } catch {
                 count = Int32(max(1, str.count / 4))
@@ -59,7 +64,7 @@ public func apfel_bridge_supported_languages() -> UnsafePointer<CChar>? {
     }
     var seen = Set<String>()
     var ids: [String] = []
-    for language in SystemLanguageModel.default.supportedLanguages {
+    for language in defaultModel.supportedLanguages {
         if let id = language.languageCode?.identifier, seen.insert(id).inserted {
             ids.append(id)
         }
@@ -165,9 +170,7 @@ public func apfel_bridge_generate_json(
         Task {
             do {
                 let permissive = req.permissive ?? false
-                let model = SystemLanguageModel(
-                    guardrails: permissive ? .permissiveContentTransformations : .default
-                )
+                let model = permissive ? permissiveModel : defaultModel
                 
                 let session: LanguageModelSession
                 if !transcriptEntries.isEmpty {

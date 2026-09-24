@@ -48,6 +48,42 @@ pub async fn run_chat_loop(
 
                 let _ = rl.add_history_entry(trimmed);
 
+                if trimmed.starts_with("/save ") {
+                    let path = trimmed[6..].trim();
+                    if path.ends_with(".json") {
+                        if let Ok(json) = serde_json::to_string_pretty(&history) {
+                            if std::fs::write(path, json).is_ok() {
+                                println!("{}", format!("Saved conversation JSON to '{}'", path).green());
+                            } else {
+                                eprintln!("{}", format!("Failed to write to '{}'", path).red());
+                            }
+                        }
+                    } else {
+                        let mut md = String::new();
+                        for m in &history {
+                            md.push_str(&format!("### {}\n\n{}\n\n", m.role.to_uppercase(), m.text_content()));
+                        }
+                        if std::fs::write(path, md).is_ok() {
+                            println!("{}", format!("Saved conversation Markdown to '{}'", path).green());
+                        } else {
+                            eprintln!("{}", format!("Failed to write to '{}'", path).red());
+                        }
+                    }
+                    continue;
+                }
+
+                if trimmed.starts_with("/system ") {
+                    let new_sys = trimmed[8..].trim();
+                    history.retain(|m| m.role != "system");
+                    if !new_sys.is_empty() {
+                        history.insert(0, OpenAIMessage::system(new_sys));
+                        println!("{}", "Updated system instructions.".green());
+                    } else {
+                        println!("{}", "Cleared system instructions.".dimmed());
+                    }
+                    continue;
+                }
+
                 match trimmed {
                     "/exit" | "/quit" => {
                         println!("Bye!");
@@ -69,11 +105,21 @@ pub async fn run_chat_loop(
                         );
                         continue;
                     }
+                    "/system" => {
+                        let sys = history.iter().find(|m| m.role == "system");
+                        match sys {
+                            Some(m) => println!("Current system prompt:\n{}", m.text_content().cyan()),
+                            None => println!("No system prompt set. Use '/system <prompt>' to set one."),
+                        }
+                        continue;
+                    }
                     "/help" => {
                         println!("Available commands:");
-                        println!("  /exit, /quit - Exit chat");
-                        println!("  /clear       - Clear conversation history");
-                        println!("  /info        - Display current context window status");
+                        println!("  /exit, /quit      - Exit chat");
+                        println!("  /clear            - Clear conversation history");
+                        println!("  /info             - Display current context window status");
+                        println!("  /system [prompt]  - View or update system instructions");
+                        println!("  /save <file>      - Export conversation to .md or .json file");
                         continue;
                     }
                     _ => {}
