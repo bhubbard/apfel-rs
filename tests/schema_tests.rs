@@ -71,3 +71,52 @@ fn test_deeply_nested_schema_rejected() {
     let err = res.unwrap_err().to_string();
     assert!(err.contains("exceeds maximum nesting depth") || err.contains("recursion limit"));
 }
+
+#[test]
+fn test_schema_parser_array_and_enum() {
+    let schema_json = r#"{
+        "type": "object",
+        "properties": {
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            "status": {
+                "type": "string",
+                "enum": ["draft", "published", "archived"]
+            }
+        }
+    }"#;
+
+    let ir = SchemaParser::parse(schema_json, "Article").expect("Failed to parse array and enum");
+    match ir {
+        SchemaIR::Object { properties, .. } => {
+            assert_eq!(properties.len(), 2);
+            assert_eq!(properties[0].name, "status");
+            assert_eq!(properties[1].name, "tags");
+        }
+        _ => panic!("Expected SchemaIR::Object"),
+    }
+}
+
+#[test]
+fn test_schema_parser_type_array_null() {
+    let schema_json = r#"{
+        "type": "object",
+        "properties": {
+            "nickname": {
+                "type": ["string", "null"]
+            }
+        }
+    }"#;
+
+    let ir = SchemaParser::parse(schema_json, "User").expect("Failed to parse type array null");
+    match ir {
+        SchemaIR::Object { properties, .. } => {
+            assert_eq!(properties.len(), 1);
+            assert!(properties[0].is_optional);
+        }
+        _ => panic!("Expected SchemaIR::Object"),
+    }
+}
+

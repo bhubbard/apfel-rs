@@ -210,6 +210,27 @@ apfel --serve --mcp-server "./search_server.py"
 
 ---
 
+## Testing & Code Coverage
+
+Run the 71 unit and integration test suites:
+
+```bash
+cargo test
+```
+
+Generate full code coverage metrics using `cargo-llvm-cov`:
+
+```bash
+# Text summary of region, line, and function coverage
+cargo llvm-cov --summary-only
+
+# Generate an interactive HTML report
+cargo llvm-cov --html
+open target/llvm-cov/html/index.html
+```
+
+---
+
 ## Exit Codes
 
 | Exit Code | Constant | Meaning |

@@ -140,5 +140,49 @@ async fn test_server_routes_and_security() {
         .await
         .expect("Conflict request failed");
     assert_eq!(res.status(), 400);
+
+    // 9. List models GET /v1/models
+    let res = client
+        .get(format!("{}/v1/models", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .send()
+        .await
+        .expect("List models failed");
+    assert_eq!(res.status(), 200);
+    let models_body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(models_body["object"], "list");
+    assert!(models_body["data"].as_array().unwrap().iter().any(|m| m["id"] == "apple-foundationmodel"));
+
+    // 10. OpenAI responses endpoint POST /v1/responses
+    let responses_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "input": "Tell me a joke"
+    });
+    let res = client
+        .post(format!("{}/v1/responses", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&responses_body)
+        .send()
+        .await
+        .expect("Responses endpoint failed");
+    assert_eq!(res.status(), 200);
+    let resp_obj: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(resp_obj["object"], "response");
+    assert_eq!(resp_obj["status"], "completed");
+
+    // 11. Response format JSON fence stripping
+    let json_format_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [{ "role": "user", "content": "Return json" }],
+        "response_format": { "type": "json_object" }
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&json_format_body)
+        .send()
+        .await
+        .expect("Response format request failed");
+    assert_eq!(res.status(), 200);
 }
 

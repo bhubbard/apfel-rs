@@ -26,6 +26,31 @@ pub struct AppState {
     pub mcp_manager: Option<Arc<MCPManager>>,
 }
 
+#[derive(serde::Serialize)]
+struct ChunkView<'a> {
+    id: &'a str,
+    object: &'static str,
+    created: i64,
+    model: &'a str,
+    choices: [ChoiceView<'a>; 1],
+}
+
+#[derive(serde::Serialize)]
+struct ChoiceView<'a> {
+    index: usize,
+    delta: DeltaView<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    finish_reason: Option<&'a str>,
+}
+
+#[derive(serde::Serialize, Default)]
+struct DeltaView<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
+}
+
 // MARK: - Health & Info
 
 pub async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -167,56 +192,67 @@ pub async fn chat_completions_handler(
                             }
                         }
                         if !emit_text.is_empty() {
-                            let chunk_obj = ChatCompletionChunk {
-                                id: stream_id.clone(),
-                                object: "chat.completion.chunk".to_string(),
+                            let chunk_view = ChunkView {
+                                id: &stream_id,
+                                object: "chat.completion.chunk",
                                 created,
-                                model: model_name.clone(),
-                                choices: vec![ChatCompletionChunkChoice {
+                                model: &model_name,
+                                choices: [ChoiceView {
                                     index: 0,
-                                    delta: ChatCompletionChunkDelta {
+                                    delta: DeltaView {
                                         role: None,
-                                        content: Some(emit_text),
-                                        tool_calls: None,
+                                        content: Some(&emit_text),
                                     },
                                     finish_reason: None,
                                 }],
                             };
-                            let json = serde_json::to_string(&chunk_obj).unwrap_or_default();
-                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", json));
+                            let json = serde_json::to_string(&chunk_view).unwrap_or_default();
+                            let mut msg = String::with_capacity(json.len() + 9);
+                            msg.push_str("data: ");
+                            msg.push_str(&json);
+                            msg.push_str("\n\n");
+                            yield Ok::<_, std::convert::Infallible>(msg);
                         }
                         if stopped {
-                            let final_chunk = ChatCompletionChunk {
-                                id: stream_id.clone(),
-                                object: "chat.completion.chunk".to_string(),
+                            let final_view = ChunkView {
+                                id: &stream_id,
+                                object: "chat.completion.chunk",
                                 created,
-                                model: model_name.clone(),
-                                choices: vec![ChatCompletionChunkChoice {
+                                model: &model_name,
+                                choices: [ChoiceView {
                                     index: 0,
-                                    delta: ChatCompletionChunkDelta::default(),
-                                    finish_reason: Some("stop".to_string()),
+                                    delta: DeltaView::default(),
+                                    finish_reason: Some("stop"),
                                 }],
                             };
-                            let json = serde_json::to_string(&final_chunk).unwrap_or_default();
-                            yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", json));
+                            let json = serde_json::to_string(&final_view).unwrap_or_default();
+                            let mut msg = String::with_capacity(json.len() + 25);
+                            msg.push_str("data: ");
+                            msg.push_str(&json);
+                            msg.push_str("\n\ndata: [DONE]\n\n");
+                            yield Ok(msg);
                             break;
                         }
                     }
                     StreamChunk::Done { finish_reason } => {
                         if !stopped {
-                            let final_chunk = ChatCompletionChunk {
-                                id: stream_id.clone(),
-                                object: "chat.completion.chunk".to_string(),
+                            let final_view = ChunkView {
+                                id: &stream_id,
+                                object: "chat.completion.chunk",
                                 created,
-                                model: model_name.clone(),
-                                choices: vec![ChatCompletionChunkChoice {
+                                model: &model_name,
+                                choices: [ChoiceView {
                                     index: 0,
-                                    delta: ChatCompletionChunkDelta::default(),
-                                    finish_reason: Some(finish_reason),
+                                    delta: DeltaView::default(),
+                                    finish_reason: Some(&finish_reason),
                                 }],
                             };
-                            let json = serde_json::to_string(&final_chunk).unwrap_or_default();
-                            yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", json));
+                            let json = serde_json::to_string(&final_view).unwrap_or_default();
+                            let mut msg = String::with_capacity(json.len() + 25);
+                            msg.push_str("data: ");
+                            msg.push_str(&json);
+                            msg.push_str("\n\ndata: [DONE]\n\n");
+                            yield Ok(msg);
                         }
                         break;
                     }
@@ -264,17 +300,15 @@ pub async fn chat_completions_handler(
             }
         };
 
-        let content = if let Some(rf) = &req.response_format {
+        let mut final_content = if let Some(rf) = &req.response_format {
             if rf.format_type == "json_object" || rf.format_type == "json_schema" {
-                JSONFenceStripper::strip(&result.content)
+                JSONFenceStripper::strip(&result.content).to_string()
             } else {
                 result.content
             }
         } else {
             result.content
         };
-
-        let mut final_content = content;
         let mut final_finish_reason = result.finish_reason;
 
         let stop_seqs = req.stop_sequences();

@@ -19,15 +19,17 @@ impl FileFraming {
             what_it_shows.trim()
         };
 
-        let text_section = if ocr_text.trim().is_empty() {
-            "text in image: (none detected)".to_string()
+        let ocr_trimmed = ocr_text.trim();
+        if ocr_trimmed.is_empty() {
+            format!(
+                "=== {} (image) ===\nwhat the image shows: {}\ntext in image: (none detected)",
+                name, labels
+            )
         } else {
-            format!("text in image:\n{}", ocr_text.trim_end())
-        };
-
-        format!(
-            "=== {} (image) ===\nwhat the image shows: {}\n{}",
-            name, labels, text_section
-        )
+            format!(
+                "=== {} (image) ===\nwhat the image shows: {}\ntext in image:\n{}",
+                name, labels, ocr_trimmed
+            )
+        }
     }
 }

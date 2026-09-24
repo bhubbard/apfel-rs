@@ -16,6 +16,7 @@ pub struct SessionManager {
     mcp_manager: Option<Arc<MCPManager>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct SessionResult {
     pub content: String,
     pub tool_log: Vec<ToolLogEntry>,
