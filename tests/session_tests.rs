@@ -72,3 +72,10 @@ async fn test_session_manager_context_overflow() {
         other => panic!("Expected ContextOverflow, got {:?}", other),
     }
 }
+
+#[test]
+fn test_default_engine_instantiation() {
+    let engine = apfel::backend::default_engine();
+    assert!(engine.context_size() > 0);
+}
+

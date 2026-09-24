@@ -21,11 +21,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub async fn run_cli(args: CliArgs) -> i32 {
+    let engine = default_engine();
+    run_cli_with_engine(args, engine).await
+}
+
+pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     if args.no_color {
         colored::control::set_override(false);
     }
-
-    let engine = default_engine();
 
     // 0. Completions Generator
     if let Some(shell_name) = &args.completions {

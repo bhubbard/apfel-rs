@@ -14,13 +14,30 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 #[cfg(unix)]
-fn set_private_permissions(path: &str) {
+pub fn set_private_permissions(path: &str) {
     use std::os::unix::fs::PermissionsExt;
     if let Ok(metadata) = std::fs::metadata(path) {
         let mut perms = metadata.permissions();
         perms.set_mode(0o600);
         let _ = std::fs::set_permissions(path, perms);
     }
+}
+
+pub fn save_conversation(path: &str, history: &[OpenAIMessage]) -> Result<(), ApfelError> {
+    if path.ends_with(".json") {
+        let json = serde_json::to_string_pretty(history)
+            .map_err(|e| ApfelError::Runtime(e.to_string()))?;
+        std::fs::write(path, json).map_err(|e| ApfelError::Runtime(e.to_string()))?;
+    } else {
+        let mut md = String::new();
+        for m in history {
+            md.push_str(&format!("### {}\n\n{}\n\n", m.role.to_uppercase(), m.text_content()));
+        }
+        std::fs::write(path, md).map_err(|e| ApfelError::Runtime(e.to_string()))?;
+    }
+    #[cfg(unix)]
+    set_private_permissions(path);
+    Ok(())
 }
 
 pub async fn run_chat_loop(
@@ -65,27 +82,13 @@ pub async fn run_chat_loop(
 
                 if trimmed.starts_with("/save ") {
                     let path = trimmed[6..].trim();
-                    if path.ends_with(".json") {
-                        if let Ok(json) = serde_json::to_string_pretty(&history) {
-                            if std::fs::write(path, json).is_ok() {
-                                #[cfg(unix)]
-                                set_private_permissions(path);
-                                println!("{}", format!("Saved conversation JSON to '{}'", path).green());
-                            } else {
-                                eprintln!("{}", format!("Failed to write to '{}'", path).red());
-                            }
+                    match save_conversation(path, &history) {
+                        Ok(_) => {
+                            let fmt = if path.ends_with(".json") { "JSON" } else { "Markdown" };
+                            println!("{}", format!("Saved conversation {} to '{}'", fmt, path).green());
                         }
-                    } else {
-                        let mut md = String::new();
-                        for m in &history {
-                            md.push_str(&format!("### {}\n\n{}\n\n", m.role.to_uppercase(), m.text_content()));
-                        }
-                        if std::fs::write(path, md).is_ok() {
-                            #[cfg(unix)]
-                            set_private_permissions(path);
-                            println!("{}", format!("Saved conversation Markdown to '{}'", path).green());
-                        } else {
-                            eprintln!("{}", format!("Failed to write to '{}'", path).red());
+                        Err(e) => {
+                            eprintln!("{}", format!("Failed to write to '{}': {}", path, e).red());
                         }
                     }
                     continue;

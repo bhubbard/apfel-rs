@@ -135,3 +135,31 @@ fn test_context_instructions_exceeding_budget_fails() {
     let result = ContextManager::trim_messages(&messages, 10, &config, |s| s.len());
     assert!(result.is_none());
 }
+
+#[test]
+fn test_context_strategy_from_str() {
+    use std::str::FromStr;
+
+    assert_eq!(ContextStrategy::from_str("newest-first").unwrap(), ContextStrategy::NewestFirst);
+    assert_eq!(ContextStrategy::from_str("newest").unwrap(), ContextStrategy::NewestFirst);
+    assert_eq!(ContextStrategy::from_str("oldest-first").unwrap(), ContextStrategy::OldestFirst);
+    assert_eq!(ContextStrategy::from_str("oldest").unwrap(), ContextStrategy::OldestFirst);
+    assert_eq!(ContextStrategy::from_str("sliding-window").unwrap(), ContextStrategy::SlidingWindow);
+    assert_eq!(ContextStrategy::from_str("sliding").unwrap(), ContextStrategy::SlidingWindow);
+    assert_eq!(ContextStrategy::from_str("summarize").unwrap(), ContextStrategy::Summarize);
+    assert_eq!(ContextStrategy::from_str("strict").unwrap(), ContextStrategy::Strict);
+
+    assert!(ContextStrategy::from_str("invalid-strategy").is_err());
+}
+
+#[test]
+fn test_context_config_defaults_and_serde() {
+    let default_cfg = ContextConfig::default();
+    assert_eq!(default_cfg.strategy, ContextStrategy::NewestFirst);
+    assert_eq!(default_cfg.output_reserve, 512);
+
+    let json = serde_json::to_string(&default_cfg).unwrap();
+    let deserialized: ContextConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(default_cfg, deserialized);
+}
+
