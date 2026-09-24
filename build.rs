@@ -45,6 +45,8 @@ fn main() {
                         println!("cargo:rustc-link-arg=__info_plist");
                         println!("cargo:rustc-link-arg={}", info_plist.display());
                         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+                        println!("cargo:rustc-link-arg=-Wl,-rpath,/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx");
+                        println!("cargo:rustc-link-search=native=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx");
                         println!("cargo:rustc-link-lib=framework=Foundation");
                         println!("cargo:rustc-link-lib=framework=FoundationModels");
                         println!("cargo:rustc-link-search=framework=/System/Library/Frameworks");
