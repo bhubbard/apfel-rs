@@ -28,17 +28,29 @@ fn main() {
 
         match status {
             Ok(s) if s.success() => {
-                println!("cargo:rustc-cfg=has_foundation_models");
-                println!("cargo:rustc-link-arg={}", bridge_obj.display());
-                println!("cargo:rustc-link-arg=-sectcreate");
-                println!("cargo:rustc-link-arg=__TEXT");
-                println!("cargo:rustc-link-arg=__info_plist");
-                println!("cargo:rustc-link-arg={}", info_plist.display());
-                println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-                println!("cargo:rustc-link-lib=framework=Foundation");
-                println!("cargo:rustc-link-lib=framework=FoundationModels");
-                println!("cargo:rustc-link-search=framework=/System/Library/Frameworks");
-                println!("cargo:rustc-link-search=native=/usr/lib/swift");
+                let lib_path = out_dir.join("libapfel_bridge.a");
+                let ar_status = Command::new("ar")
+                    .arg("crs")
+                    .arg(&lib_path)
+                    .arg(&bridge_obj)
+                    .status();
+
+                if let Ok(ars) = ar_status {
+                    if ars.success() {
+                        println!("cargo:rustc-cfg=has_foundation_models");
+                        println!("cargo:rustc-link-search=native={}", out_dir.display());
+                        println!("cargo:rustc-link-lib=static=apfel_bridge");
+                        println!("cargo:rustc-link-arg=-sectcreate");
+                        println!("cargo:rustc-link-arg=__TEXT");
+                        println!("cargo:rustc-link-arg=__info_plist");
+                        println!("cargo:rustc-link-arg={}", info_plist.display());
+                        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+                        println!("cargo:rustc-link-lib=framework=Foundation");
+                        println!("cargo:rustc-link-lib=framework=FoundationModels");
+                        println!("cargo:rustc-link-search=framework=/System/Library/Frameworks");
+                        println!("cargo:rustc-link-search=native=/usr/lib/swift");
+                    }
+                }
             }
             _ => {
                 println!(
