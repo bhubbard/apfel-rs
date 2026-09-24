@@ -64,14 +64,29 @@ Rigorous stress testing conducted on Apple Silicon (macOS Sequoia) comparing the
 
 ## Installation & Setup
 
-### 1. Instant Run via NPX (Zero Setup)
+### 1. Homebrew (macOS Recommended)
+Install via the official tap:
+
+```bash
+brew install bhubbard/tap/apfel-rs
+
+# Command is now available globally
+apfel --model-info
+```
+
+Run as a background system service (starts automatically on login):
+```bash
+brew services start apfel-rs
+```
+
+### 2. Instant Run via NPX (Zero Setup)
 No Rust or Xcode installation required — runs the bundled Apple Silicon binary immediately:
 
 ```bash
 npx apfel-rs "Explain quantum computing in one sentence"
 ```
 
-### 2. Global Install via NPM
+### 3. Global Install via NPM
 ```bash
 npm install -g apfel-rs
 
@@ -79,7 +94,7 @@ npm install -g apfel-rs
 apfel --stream "Write a haiku about compiling Rust"
 ```
 
-### 3. Install via Cargo (crates.io)
+### 4. Install via Cargo (crates.io)
 ```bash
 cargo install apfel-rs
 
@@ -87,7 +102,7 @@ cargo install apfel-rs
 apfel --model-info
 ```
 
-### 4. Building from Source
+### 5. Building from Source
 **Prerequisites**: macOS Sequoia (26.0+) on Apple Silicon with Xcode Command Line Tools.
 
 ```bash
