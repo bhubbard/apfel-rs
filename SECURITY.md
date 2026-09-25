@@ -25,7 +25,7 @@ Only the latest active minor release receives active security patches. We recomm
    Navigate to the [Security page](https://github.com/bhubbard/apfel-rs/security/advisories) on GitHub and select **"Report a vulnerability"**.
 
 2. **Direct Contact:**
-   If GitHub Private Reporting is unavailable, send an email to `brandon@bhubbard.dev` with the subject tag `[SECURITY: apfel-rs]`.
+   If GitHub Private Reporting is unavailable, send an email to `hello@brandonhubbard.com` with the subject tag `[SECURITY: apfel-rs]`.
 
 ### What to Include in Your Report
 
