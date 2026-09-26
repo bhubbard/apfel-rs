@@ -565,7 +565,7 @@
       background: rgba(10, 10, 10, 0.88);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-      z-index: 2000;
+      z-index: 99999;
       display: none;
       align-items: flex-start;
       justify-content: center;
@@ -2760,7 +2760,21 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
         });
       }
       searchModalOverlay.classList.add("active");
-      if (modalSearchInput) {
+          // Synchronize catalog with canonical API
+    (async function syncApiCatalog() {
+      try {
+        const res = await fetch("https://code.brandonhubbard.com/api/projects.json");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            REPOSITORIES = data;
+            if (typeof renderModalResults === 'function') renderModalResults();
+          }
+        }
+      } catch (e) {}
+    })();
+
+    if (modalSearchInput) {
         modalSearchInput.value = "";
         setTimeout(() => {
           modalSearchInput.focus();
@@ -2796,9 +2810,6 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
     }
 
     window.addEventListener("keydown", (e) => {
-      if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
-      const sModal = document.getElementById("searchModalOverlay");
-      if (sModal && sModal.classList.contains("active")) return;
       const isCmdK = (e.metaKey || e.ctrlKey) && (e.code === "KeyK" || (e.key && e.key.toLowerCase() === "k"));
       if (isCmdK) {
         e.preventDefault();
@@ -2843,6 +2854,20 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
         }
       }
     });
+
+        // Synchronize catalog with canonical API
+    (async function syncApiCatalog() {
+      try {
+        const res = await fetch("https://code.brandonhubbard.com/api/projects.json");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            REPOSITORIES = data;
+            if (typeof renderModalResults === 'function') renderModalResults();
+          }
+        }
+      } catch (e) {}
+    })();
 
     if (modalSearchInput) {
       modalSearchInput.addEventListener("input", () => {
