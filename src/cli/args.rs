@@ -78,6 +78,10 @@ pub struct CliArgs {
     #[arg(long = "code")]
     pub code_only: bool,
 
+    /// Automatically continue generation when truncated by token length limit
+    #[arg(long = "auto-continue")]
+    pub auto_continue: bool,
+
     /// JSON schema file path for structured output
     #[arg(long = "schema", value_name = "FILE")]
     pub schema: Option<String>,

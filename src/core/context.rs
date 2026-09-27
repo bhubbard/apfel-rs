@@ -120,6 +120,21 @@ impl ContextManager {
                         break;
                     }
                 }
+                if kept.is_empty() && !conversation.is_empty() {
+                    if let Some(newest) = conversation.last() {
+                        let text = newest.text_content();
+                        let compacted = Self::compact_to_fit(&text, conv_budget, &count_tokens);
+                        if !compacted.is_empty() {
+                            kept.push(OpenAIMessage {
+                                role: newest.role.clone(),
+                                content: Some(crate::core::models::MessageContent::Text(compacted)),
+                                name: newest.name.clone(),
+                                tool_calls: None,
+                                tool_call_id: None,
+                            });
+                        }
+                    }
+                }
                 kept.reverse();
                 kept
             }
@@ -133,6 +148,21 @@ impl ContextManager {
                         current_cost += cost;
                     } else {
                         break;
+                    }
+                }
+                if kept.is_empty() && !conversation.is_empty() {
+                    if let Some(first) = conversation.first() {
+                        let text = first.text_content();
+                        let compacted = Self::compact_to_fit(&text, conv_budget, &count_tokens);
+                        if !compacted.is_empty() {
+                            kept.push(OpenAIMessage {
+                                role: first.role.clone(),
+                                content: Some(crate::core::models::MessageContent::Text(compacted)),
+                                name: first.name.clone(),
+                                tool_calls: None,
+                                tool_call_id: None,
+                            });
+                        }
                     }
                 }
                 kept
@@ -154,6 +184,21 @@ impl ContextManager {
                         current_cost += cost;
                     } else {
                         break;
+                    }
+                }
+                if kept.is_empty() && !turn_window.is_empty() {
+                    if let Some(newest) = turn_window.last() {
+                        let text = newest.text_content();
+                        let compacted = Self::compact_to_fit(&text, conv_budget, &count_tokens);
+                        if !compacted.is_empty() {
+                            kept.push(OpenAIMessage {
+                                role: newest.role.clone(),
+                                content: Some(crate::core::models::MessageContent::Text(compacted)),
+                                name: newest.name.clone(),
+                                tool_calls: None,
+                                tool_call_id: None,
+                            });
+                        }
                     }
                 }
                 kept.reverse();
@@ -189,5 +234,77 @@ impl ContextManager {
         let mut out = instructions;
         out.extend(trimmed_conv);
         Some(out)
+    }
+
+    /// Compacts and truncates text to fit within a given token budget
+    pub fn compact_to_fit<F>(text: &str, budget_tokens: usize, count_tokens: &F) -> String
+    where
+        F: Fn(&str) -> usize,
+    {
+        if count_tokens(text) <= budget_tokens {
+            return text.to_string();
+        }
+
+        // Phase 1: Normalize excessive blank lines and trailing spaces
+        let lines: Vec<&str> = text.lines().collect();
+        let mut compacted_lines = Vec::new();
+        let mut last_was_empty = false;
+        for line in &lines {
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                if !last_was_empty {
+                    compacted_lines.push("");
+                    last_was_empty = true;
+                }
+            } else {
+                compacted_lines.push(trimmed);
+                last_was_empty = false;
+            }
+        }
+        let joined = compacted_lines.join("\n");
+        if count_tokens(&joined) <= budget_tokens {
+            return joined;
+        }
+
+        // Phase 2: Binary search truncation of lines to strictly fit budget
+        let mut low = 0;
+        let mut high = compacted_lines.len();
+        let mut best_str = String::new();
+
+        while low <= high {
+            let mid = (low + high) / 2;
+            let candidate = compacted_lines[..mid].join("\n");
+            if count_tokens(&candidate) <= budget_tokens {
+                best_str = candidate;
+                low = mid + 1;
+            } else {
+                if mid == 0 {
+                    break;
+                }
+                high = mid - 1;
+            }
+        }
+
+        if best_str.is_empty() {
+            // Character-level truncation fallback
+            let chars: Vec<char> = text.chars().collect();
+            let mut c_low = 0;
+            let mut c_high = chars.len();
+            while c_low <= c_high {
+                let c_mid = (c_low + c_high) / 2;
+                let candidate: String = chars[..c_mid].iter().collect();
+                if count_tokens(&candidate) <= budget_tokens {
+                    best_str = candidate;
+                    c_low = c_mid + 1;
+                } else {
+                    if c_mid == 0 {
+                        break;
+                    }
+                    c_high = c_mid - 1;
+                }
+            }
+        }
+
+        best_str
     }
 }

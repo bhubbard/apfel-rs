@@ -563,7 +563,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             vec![crate::core::models::OpenAIMessage::user(&req.prompt)]
         });
         let t_start = Instant::now();
-        let res = match session_mgr
+        let mut res = match session_mgr
             .process_messages(
                 &active_messages,
                 None,
@@ -581,6 +581,34 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                 return e.exit_code();
             }
         };
+
+        // Auto-continuation on length truncation
+        if args.auto_continue && res.finish_reason == "length" {
+            let mut continuation_turns = 0;
+            let mut conversation = active_messages.clone();
+            while res.finish_reason == "length" && continuation_turns < 3 {
+                continuation_turns += 1;
+                conversation.push(crate::core::models::OpenAIMessage::assistant(&res.content));
+                conversation.push(crate::core::models::OpenAIMessage::user("continue"));
+                if let Ok(next_res) = session_mgr
+                    .process_messages(
+                        &conversation,
+                        None,
+                        &config,
+                        args.temperature,
+                        args.top_p,
+                        args.max_tokens,
+                        args.seed,
+                    )
+                    .await
+                {
+                    res.content.push_str(&next_res.content);
+                    res.finish_reason = next_res.finish_reason;
+                } else {
+                    break;
+                }
+            }
+        }
 
         // Telemetry recording if requested
         if let Some(telemetry_path) = &args.telemetry {
