@@ -451,3 +451,136 @@ pub async fn responses_handler(
 
     Json(resp).into_response()
 }
+
+// ============================================================================
+// Embedding & Ollama Handlers (Phases 2 & 3)
+// ============================================================================
+
+fn compute_text_embedding(text: &str, dims: usize) -> Vec<f32> {
+    let mut vec = vec![0.0f32; dims];
+    let lower = text.to_lowercase();
+    for (i, word) in lower.split_whitespace().enumerate() {
+        let mut h = 2166136261u32;
+        for b in word.bytes() {
+            h ^= b as u32;
+            h = h.wrapping_mul(16777619);
+        }
+        let idx = (h as usize) % dims;
+        vec[idx] += 1.0 / (1.0 + i as f32 * 0.05);
+    }
+    let norm_sq: f32 = vec.iter().map(|x| x * x).sum();
+    let norm = norm_sq.sqrt();
+    if norm > 1e-9 {
+        let inv = 1.0 / norm;
+        for x in vec.iter_mut() {
+            *x *= inv;
+        }
+    }
+    vec
+}
+
+pub async fn embeddings_handler(
+    State(state): State<AppState>,
+    Json(req): Json<EmbeddingRequest>,
+) -> Response {
+    let inputs = req.input.to_vec();
+    let mut total_tokens = 0;
+    let mut data = Vec::with_capacity(inputs.len());
+
+    for (index, text) in inputs.iter().enumerate() {
+        let tokens = state.engine.count_tokens(text);
+        total_tokens += tokens;
+        let embedding = compute_text_embedding(text, 384);
+        data.push(EmbeddingObject {
+            object: "embedding".to_string(),
+            index,
+            embedding,
+        });
+    }
+
+    let resp = EmbeddingResponse {
+        object: "list".to_string(),
+        data,
+        model: req.model,
+        usage: Usage {
+            prompt_tokens: total_tokens,
+            completion_tokens: 0,
+            total_tokens,
+        },
+    };
+
+    Json(resp).into_response()
+}
+
+pub async fn ollama_tags_handler(State(_state): State<AppState>) -> Response {
+    let models = vec![
+        OllamaModelTag {
+            name: "apple-intelligence".to_string(),
+            modified_at: chrono::Utc::now().to_rfc3339(),
+            size: 4096000000,
+        },
+        OllamaModelTag {
+            name: "mlx-qwen2.5-coder".to_string(),
+            modified_at: chrono::Utc::now().to_rfc3339(),
+            size: 4200000000,
+        },
+    ];
+    Json(OllamaTagsResponse { models }).into_response()
+}
+
+pub async fn ollama_chat_handler(
+    State(state): State<AppState>,
+    Json(req): Json<OllamaChatRequest>,
+) -> Response {
+    let mut prompt = String::new();
+    for m in &req.messages {
+        prompt.push_str(&format!("{}: {}\n", m.role, m.text_content()));
+    }
+    let gen_req = GenerateRequest {
+        prompt,
+        system_prompt: None,
+        messages: Some(req.messages),
+        temperature: None,
+        top_p: None,
+        max_tokens: Some(512),
+        permissive: true,
+        seed: None,
+    };
+    match state.engine.generate(&gen_req) {
+        Ok(res) => Json(serde_json::json!({
+            "model": req.model,
+            "message": {
+                "role": "assistant",
+                "content": res.content
+            },
+            "done": true
+        }))
+        .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn ollama_generate_handler(
+    State(state): State<AppState>,
+    Json(req): Json<OllamaGenerateRequest>,
+) -> Response {
+    let gen_req = GenerateRequest {
+        prompt: req.prompt,
+        system_prompt: None,
+        messages: None,
+        temperature: None,
+        top_p: None,
+        max_tokens: Some(512),
+        permissive: true,
+        seed: None,
+    };
+    match state.engine.generate(&gen_req) {
+        Ok(res) => Json(serde_json::json!({
+            "model": req.model,
+            "response": res.content,
+            "done": true
+        }))
+        .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}

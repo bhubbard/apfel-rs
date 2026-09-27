@@ -297,3 +297,78 @@ pub struct ModelObject {
     pub created: i64,
     pub owned_by: String,
 }
+
+// ============================================================================
+// Embedding Models (Phase 2)
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmbeddingRequest {
+    pub model: String,
+    pub input: EmbeddingInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    String(String),
+    Array(Vec<String>),
+}
+
+impl EmbeddingInput {
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            EmbeddingInput::String(s) => vec![s.clone()],
+            EmbeddingInput::Array(arr) => arr.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmbeddingObject {
+    pub object: String,
+    pub index: usize,
+    pub embedding: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmbeddingResponse {
+    pub object: String,
+    pub data: Vec<EmbeddingObject>,
+    pub model: String,
+    pub usage: Usage,
+}
+
+// ============================================================================
+// Ollama Models (Phase 3)
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OllamaModelTag {
+    pub name: String,
+    pub modified_at: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OllamaTagsResponse {
+    pub models: Vec<OllamaModelTag>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OllamaChatRequest {
+    pub model: String,
+    pub messages: Vec<OpenAIMessage>,
+    #[serde(default)]
+    pub stream: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OllamaGenerateRequest {
+    pub model: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub stream: bool,
+}

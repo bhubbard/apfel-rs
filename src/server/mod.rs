@@ -46,6 +46,10 @@ pub async fn run_server(
         .route("/v1/models", get(handlers::list_models_handler))
         .route("/v1/chat/completions", post(handlers::chat_completions_handler))
         .route("/v1/responses", post(handlers::responses_handler))
+        .route("/v1/embeddings", post(handlers::embeddings_handler))
+        .route("/api/tags", get(handlers::ollama_tags_handler))
+        .route("/api/chat", post(handlers::ollama_chat_handler))
+        .route("/api/generate", post(handlers::ollama_generate_handler))
         .layer(from_fn_with_state(
             security_config,
             middleware::security_middleware,
