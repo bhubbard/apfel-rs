@@ -74,14 +74,6 @@ pub struct CliArgs {
     #[arg(long = "strict")]
     pub strict: bool,
 
-    /// Extract and print only the first markdown code block
-    #[arg(long = "code")]
-    pub code_only: bool,
-
-    /// Automatically continue generation when truncated by token length limit
-    #[arg(long = "auto-continue")]
-    pub auto_continue: bool,
-
     /// JSON schema file path for structured output
     #[arg(long = "schema", value_name = "FILE")]
     pub schema: Option<String>,
@@ -141,10 +133,6 @@ pub struct CliArgs {
     /// Run local latency and throughput benchmark
     #[arg(long = "benchmark")]
     pub benchmark: bool,
-
-    /// Split attached file into chunks of N lines and process iteratively
-    #[arg(long = "chunk-lines", value_name = "LINES")]
-    pub chunk_lines: Option<usize>,
 
     /// Append structured execution telemetry JSONL to a file path
     #[arg(long = "telemetry", value_name = "PATH")]

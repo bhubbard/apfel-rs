@@ -84,14 +84,6 @@ async fn test_cli_runner_generation_mock_engine() {
     let args = CliArgs::parse_from(&["apfel", "--no-stream", "Write code"]);
     assert_eq!(run_cli_with_engine(args, mock.clone()).await, ApfelExitCodes::SUCCESS);
 
-    // Generation with code cropper extracting code
-    let args_code = CliArgs::parse_from(&["apfel", "--code", "--no-stream", "Write code"]);
-    assert_eq!(run_cli_with_engine(args_code, mock.clone()).await, ApfelExitCodes::SUCCESS);
-
-    // Generation with code cropper failing when no code
-    let mock_no_code = Arc::new(MockEngine::with_response("Just plain text with no code fence"));
-    let args_no_code = CliArgs::parse_from(&["apfel", "--code", "--no-stream", "Explain"]);
-    assert_eq!(run_cli_with_engine(args_no_code, mock_no_code).await, ApfelExitCodes::NO_CODE);
 
     // Generation with JSON output
     let args_json = CliArgs::parse_from(&["apfel", "-o", "json", "--no-stream", "Generate json"]);

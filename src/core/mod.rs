@@ -3,7 +3,6 @@
 // Part of apfel-rs
 // ============================================================================
 
-pub mod code_cropper;
 pub mod context;
 pub mod error;
 pub mod file_framing;
@@ -17,7 +16,6 @@ pub mod stream_sink;
 pub mod token_counter;
 pub mod tool_call;
 
-pub use code_cropper::CodeCropper;
 pub use context::{ContextConfig, ContextManager, ContextStrategy};
 pub use error::{ApfelError, ApfelExitCodes, OpenAIErrorDetail, OpenAIErrorWrapper};
 pub use file_framing::FileFraming;
