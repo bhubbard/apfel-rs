@@ -138,6 +138,14 @@ pub struct CliArgs {
     #[arg(long = "benchmark")]
     pub benchmark: bool,
 
+    /// Split attached file into chunks of N lines and process iteratively
+    #[arg(long = "chunk-lines", value_name = "LINES")]
+    pub chunk_lines: Option<usize>,
+
+    /// Append structured execution telemetry JSONL to a file path
+    #[arg(long = "telemetry", value_name = "PATH")]
+    pub telemetry: Option<String>,
+
     /// Generate shell completion script (bash, zsh, fish, powershell)
     #[arg(long = "completions", value_name = "SHELL")]
     pub completions: Option<String>,

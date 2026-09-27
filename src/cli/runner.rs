@@ -265,7 +265,146 @@ async fn run_server_mode(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     ApfelExitCodes::SUCCESS
 }
 
+async fn run_chunked_generation(
+    args: &CliArgs,
+    engine: Arc<dyn BackendEngine>,
+    file_path: &str,
+    max_chunk_lines: usize,
+) -> i32 {
+    let content = match fs::read_to_string(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", file_path, e);
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+    };
+
+    let all_lines: Vec<&str> = content.lines().collect();
+
+    // Split at brace/function boundaries
+    let mut chunks: Vec<String> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    let mut depth: i32 = 0;
+
+    for line in all_lines {
+        let open_b = line.chars().filter(|&c| c == '{').count() as i32;
+        let close_b = line.chars().filter(|&c| c == '}').count() as i32;
+        depth += open_b - close_b;
+
+        cur.push(line);
+        if cur.len() >= max_chunk_lines && depth <= 1 {
+            chunks.push(cur.join("\n"));
+            cur.clear();
+        }
+    }
+    if !cur.is_empty() {
+        chunks.push(cur.join("\n"));
+    }
+
+    let total = chunks.len();
+    let mut generated_chunks: Vec<String> = Vec::new();
+    let t_start = std::time::Instant::now();
+
+    let session_mgr = crate::backend::session::SessionManager::new(engine.clone(), None);
+    let config = crate::core::context::ContextConfig {
+        strategy: ContextStrategy::from_str(&args.context_strategy).unwrap_or_default(),
+        max_turns: args.max_turns,
+        output_reserve: 512,
+        permissive: args.permissive,
+    };
+
+    let base_prompt = args.prompt.as_deref().unwrap_or("Translate this code.");
+
+    for (idx, chunk) in chunks.iter().enumerate() {
+        let chunk_prompt = if total == 1 {
+            format!("{}\n\n--- File: {} ---\n{}\n--- End File ---", base_prompt, file_path, chunk)
+        } else {
+            format!(
+                "{}\n\n--- Chunk {}/{} of {} ---\n{}\n--- End Chunk ---",
+                base_prompt,
+                idx + 1,
+                total,
+                file_path,
+                chunk
+            )
+        };
+
+        let messages = vec![crate::core::models::OpenAIMessage::user(&chunk_prompt)];
+        let res = match session_mgr.process_messages(
+            &messages,
+            None,
+            &config,
+            args.temperature,
+            args.top_p,
+            args.max_tokens,
+            args.seed,
+        ).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Chunk {} error: {}", idx + 1, e);
+                return e.exit_code();
+            }
+        };
+
+        if args.code_only {
+            if let Some(code) = CodeCropper::extract(&res.content) {
+                generated_chunks.push(CodeCropper::sanitize(code));
+            }
+        } else {
+            generated_chunks.push(res.content);
+        }
+    }
+
+    if let Some(telemetry_path) = &args.telemetry {
+        let record = serde_json::json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "duration_ms": t_start.elapsed().as_millis(),
+            "finish_reason": "stop",
+            "output_bytes": generated_chunks.iter().map(|s| s.len()).sum::<usize>(),
+            "code_only": args.code_only,
+            "chunks": total,
+        });
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(telemetry_path) {
+            use std::io::Write;
+            let _ = writeln!(file, "{}", record);
+        }
+    }
+
+    if args.code_only {
+        let mut uses = std::collections::BTreeSet::new();
+        let mut bodies = Vec::new();
+        for g in &generated_chunks {
+            for line in g.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("use ") && trimmed.ends_with(';') {
+                    uses.insert(trimmed.to_string());
+                } else {
+                    bodies.push(line);
+                }
+            }
+        }
+        for u in uses {
+            println!("{}", u);
+        }
+        println!();
+        for b in bodies {
+            println!("{}", b);
+        }
+    } else {
+        for g in &generated_chunks {
+            println!("{}", g);
+        }
+    }
+
+    ApfelExitCodes::SUCCESS
+}
+
 async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
+    if let Some(chunk_lines) = args.chunk_lines {
+        if args.file.len() == 1 {
+            return run_chunked_generation(&args, engine, &args.file[0], chunk_lines).await;
+        }
+    }
     let mut prompt_text = String::new();
 
     if let Some(p) = &args.prompt {
@@ -423,6 +562,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         let active_messages = messages.unwrap_or_else(|| {
             vec![crate::core::models::OpenAIMessage::user(&req.prompt)]
         });
+        let t_start = Instant::now();
         let res = match session_mgr
             .process_messages(
                 &active_messages,
@@ -442,12 +582,27 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         };
 
+        // Telemetry recording if requested
+        if let Some(telemetry_path) = &args.telemetry {
+            let record = serde_json::json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "duration_ms": t_start.elapsed().as_millis(),
+                "finish_reason": res.finish_reason,
+                "output_bytes": res.content.len(),
+                "code_only": args.code_only,
+            });
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(telemetry_path) {
+                let _ = writeln!(file, "{}", record);
+            }
+        }
+
         if args.code_only {
             if let Some(code) = CodeCropper::extract(&res.content) {
-                println!("{}", code);
+                let sanitized = CodeCropper::sanitize(code);
+                println!("{}", sanitized);
                 ApfelExitCodes::SUCCESS
             } else {
-                eprintln!("Error: no code block found in response");
+                eprintln!("Error: no code found in response");
                 ApfelExitCodes::NO_CODE
             }
         } else if args.output == "json" {
