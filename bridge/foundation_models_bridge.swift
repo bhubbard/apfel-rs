@@ -48,7 +48,7 @@ public func apfel_bridge_token_count(text: UnsafePointer<CChar>) -> Int32 {
             }
             sema.signal()
         }
-        sema.wait()
+        _ = sema.wait(timeout: .now() + .milliseconds(100))
         return count
     } else {
         return Int32(max(1, str.count / 4))

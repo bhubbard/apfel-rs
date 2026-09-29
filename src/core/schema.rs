@@ -7,6 +7,7 @@ use crate::core::error::ApfelError;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
+/// Intermediate representation of supported JSON Schema types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SchemaIR {
     Object {
@@ -37,6 +38,7 @@ pub enum SchemaIR {
     },
 }
 
+/// Metadata and schema definition for an object property in SchemaIR.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyIR {
     pub name: String,
@@ -45,6 +47,8 @@ pub struct PropertyIR {
     pub is_optional: bool,
 }
 
+/// Parses and validates JSON Schema strings into SchemaIR trees.
+#[derive(Debug)]
 pub struct SchemaParser;
 
 impl SchemaParser {
@@ -188,14 +192,18 @@ impl SchemaParser {
                     let is_second_null = second.map_or(false, |o| {
                         o.get("type").and_then(|t| t.as_str()) == Some("null")
                     });
-                    if is_second_null && first.is_some() {
-                        return Ok((first.unwrap(), true));
+                    if is_second_null {
+                        if let Some(node) = first {
+                            return Ok((node, true));
+                        }
                     }
                     let is_first_null = first.map_or(false, |o| {
                         o.get("type").and_then(|t| t.as_str()) == Some("null")
                     });
-                    if is_first_null && second.is_some() {
-                        return Ok((second.unwrap(), true));
+                    if is_first_null {
+                        if let Some(node) = second {
+                            return Ok((node, true));
+                        }
                     }
                 }
             }

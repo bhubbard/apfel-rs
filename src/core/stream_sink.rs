@@ -3,6 +3,7 @@
 // Part of apfel-rs
 // ============================================================================
 
+/// High-water mark streaming sink suppressing duplicate text emission across stream retries.
 #[derive(Debug, Default)]
 pub struct StreamPrintSink {
     printed_char_count: usize,

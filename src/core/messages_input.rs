@@ -12,6 +12,8 @@ struct WrappedMessages {
     messages: Vec<OpenAIMessage>,
 }
 
+/// Decodes conversation JSON arrays or object envelopes into vectors of OpenAIMessages.
+#[derive(Debug)]
 pub struct MessagesInput;
 
 impl MessagesInput {

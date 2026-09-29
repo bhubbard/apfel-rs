@@ -17,6 +17,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+/// Represents an active subprocess connection to an external MCP server.
 pub struct MCPConnection {
     command_path: String,
     tools: Vec<OpenAITool>,
@@ -25,6 +26,17 @@ pub struct MCPConnection {
     child: Mutex<Child>,
     next_id: AtomicUsize,
     timeout_duration: Duration,
+}
+
+impl std::fmt::Debug for MCPConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MCPConnection")
+            .field("command_path", &self.command_path)
+            .field("tools", &self.tools)
+            .field("next_id", &self.next_id)
+            .field("timeout_duration", &self.timeout_duration)
+            .finish()
+    }
 }
 
 impl MCPConnection {
@@ -123,6 +135,8 @@ impl MCPConnection {
     }
 
     async fn send_only(&self, line: &str) -> Result<(), ApfelError> {
+        // Hold the stdin lock across write_all and flush to ensure message frame
+        // atomicity across concurrent callers before releasing it for subsequent writes.
         let mut stdin = self.stdin.lock().await;
         stdin
             .write_all(format!("{}\n", line).as_bytes())
@@ -136,17 +150,22 @@ impl MCPConnection {
     }
 
     async fn send_and_receive(&self, line: &str) -> Result<String, ApfelError> {
-        let mut stdin = self.stdin.lock().await;
         let mut reader = self.reader.lock().await;
 
-        stdin
-            .write_all(format!("{}\n", line).as_bytes())
-            .await
-            .map_err(|e| ApfelError::MCP(format!("Failed to write to MCP server: {}", e)))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|e| ApfelError::MCP(format!("Failed to flush to MCP server: {}", e)))?;
+        // Hold the stdin lock across write_all and flush to ensure message frame
+        // atomicity across concurrent callers before releasing it for subsequent writes.
+        // The lock is explicitly scoped in a block so stdin is released before awaiting the response read.
+        {
+            let mut stdin = self.stdin.lock().await;
+            stdin
+                .write_all(format!("{}\n", line).as_bytes())
+                .await
+                .map_err(|e| ApfelError::MCP(format!("Failed to write to MCP server: {}", e)))?;
+            stdin
+                .flush()
+                .await
+                .map_err(|e| ApfelError::MCP(format!("Failed to flush to MCP server: {}", e)))?;
+        }
 
         let mut line_buf = String::new();
         let read_future = reader.read_line(&mut line_buf);
@@ -171,7 +190,8 @@ impl Drop for MCPConnection {
     }
 }
 
-#[derive(Clone)]
+/// Coordinates tool dispatch across multiple running MCP server child processes.
+#[derive(Clone, Debug)]
 pub struct MCPManager {
     connections: Vec<Arc<MCPConnection>>,
 }

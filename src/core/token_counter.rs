@@ -16,6 +16,8 @@ fn hash_key(text: &str) -> u64 {
     hasher.finish()
 }
 
+/// Tracks observed context window ceilings and caches hashed token counts.
+#[derive(Debug)]
 pub struct TokenCounter {
     max_context_seen: AtomicUsize,
     runtime_fell_back: AtomicBool,

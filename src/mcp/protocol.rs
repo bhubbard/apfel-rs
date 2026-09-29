@@ -9,12 +9,15 @@ use serde::{Deserialize, Serialize};
 
 pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// Basic server identification metadata returned by MCP server initialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
 }
 
+/// JSON-RPC 2.0 protocol codec and validator for the Model Context Protocol.
+#[derive(Debug)]
 pub struct MCPProtocol;
 
 impl MCPProtocol {

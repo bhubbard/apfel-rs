@@ -11,11 +11,14 @@ use crate::core::tool_call::{ToolCallHandler, ToolLogEntry, ToolOutputTruncator}
 use crate::mcp::client::MCPManager;
 use std::sync::Arc;
 
+/// Manages multi-turn conversation sessions and orchestrates tool calling loops.
+#[derive(Debug)]
 pub struct SessionManager {
     engine: Arc<dyn BackendEngine>,
     mcp_manager: Option<Arc<MCPManager>>,
 }
 
+/// The result of processing a conversation turn, including tool execution history.
 #[derive(Debug, Clone)]
 pub struct SessionResult {
     pub content: String,

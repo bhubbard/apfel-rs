@@ -3,8 +3,8 @@
 // Part of apfel-rs
 // ============================================================================
 
-pub mod handlers;
-pub mod middleware;
+pub(crate) mod handlers;
+pub(crate) mod middleware;
 
 use crate::backend::engine::BackendEngine;
 use crate::mcp::client::MCPManager;
@@ -15,6 +15,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
+/// Starts the OpenAI-compatible HTTP server with CORS, CSRF, and MCP routing.
 pub async fn run_server(
     host: &str,
     port: u16,

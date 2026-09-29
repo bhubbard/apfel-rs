@@ -3,6 +3,8 @@
 // Part of apfel-rs
 // ============================================================================
 
+/// Formats file attachments (documents, images) with contextual metadata headers.
+#[derive(Debug)]
 pub struct FileFraming;
 
 impl FileFraming {

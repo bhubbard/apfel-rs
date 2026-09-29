@@ -19,11 +19,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Executes the apfel CLI with the default platform backend engine.
 pub async fn run_cli(args: CliArgs) -> i32 {
     let engine = default_engine();
     run_cli_with_engine(args, engine).await
 }
 
+/// Executes the apfel CLI with a specified backend engine.
 pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     if args.no_color {
         colored::control::set_override(false);

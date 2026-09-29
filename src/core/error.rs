@@ -5,6 +5,7 @@
 use serde::Serialize;
 
 /// Apfel standard exit codes matching the Swift reference implementation.
+#[derive(Debug)]
 pub struct ApfelExitCodes;
 
 impl ApfelExitCodes {
@@ -18,6 +19,7 @@ impl ApfelExitCodes {
     pub const NO_CODE: i32 = 7;
 }
 
+/// Unified error enum representing all domain, HTTP, and runtime errors in apfel.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum ApfelError {
     #[error("usage error: {0}")]
@@ -120,11 +122,13 @@ impl ApfelError {
     }
 }
 
+/// Top-level error envelope matching OpenAI's JSON error response format.
 #[derive(Debug, Serialize, Clone)]
 pub struct OpenAIErrorWrapper {
     pub error: OpenAIErrorDetail,
 }
 
+/// Detailed error payload inside OpenAI's error response envelope.
 #[derive(Debug, Serialize, Clone)]
 pub struct OpenAIErrorDetail {
     pub message: String,

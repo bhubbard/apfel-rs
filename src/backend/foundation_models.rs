@@ -71,6 +71,8 @@ extern "C" fn on_bridge_chunk(
     }
 }
 
+/// Native macOS FoundationModels engine leveraging Apple Intelligence on Apple Silicon.
+#[derive(Debug)]
 pub struct FoundationModelsEngine;
 
 impl FoundationModelsEngine {

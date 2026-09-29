@@ -7,6 +7,8 @@ use crate::backend::engine::{BackendEngine, GenerateRequest, GenerateResponse, S
 use crate::core::error::ApfelError;
 use tokio::sync::mpsc;
 
+/// Mock backend engine for testing and fallback scenarios.
+#[derive(Debug)]
 pub struct MockEngine {
     pub response: String,
     pub responses: std::sync::Mutex<Vec<String>>,

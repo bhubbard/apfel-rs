@@ -13,6 +13,7 @@ use rustyline::DefaultEditor;
 use std::io::{self, Write};
 use std::sync::Arc;
 
+/// Restricts file access permissions to 0600 (owner-only read/write) on Unix platforms.
 #[cfg(unix)]
 pub fn set_private_permissions(path: &str) {
     use std::os::unix::fs::PermissionsExt;
@@ -23,6 +24,7 @@ pub fn set_private_permissions(path: &str) {
     }
 }
 
+/// Saves conversation history to disk formatted as either JSON or Markdown.
 pub fn save_conversation(path: &str, history: &[OpenAIMessage]) -> Result<(), ApfelError> {
     if path.ends_with(".json") {
         let json = serde_json::to_string_pretty(history)
@@ -40,6 +42,7 @@ pub fn save_conversation(path: &str, history: &[OpenAIMessage]) -> Result<(), Ap
     Ok(())
 }
 
+/// Runs the interactive terminal chat loop using rustyline and context trimming.
 pub async fn run_chat_loop(
     engine: Arc<dyn BackendEngine>,
     system_prompt: Option<String>,

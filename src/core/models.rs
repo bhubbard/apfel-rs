@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Request payload for OpenAI-compatible chat completions (/v1/chat/completions).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatCompletionRequest {
     pub model: String,
@@ -43,6 +44,7 @@ pub struct ChatCompletionRequest {
     pub x_context_output_reserve: Option<usize>,
 }
 
+/// Stop sequence condition representing either a single string or list of strings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum StopSequence {
@@ -77,6 +79,7 @@ impl ChatCompletionRequest {
     }
 }
 
+/// A single message turn within a chat completion conversation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenAIMessage {
     pub role: String,
@@ -158,6 +161,7 @@ impl OpenAIMessage {
     }
 }
 
+/// Content of a conversation message, either plain text or a list of parts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MessageContent {
@@ -165,6 +169,7 @@ pub enum MessageContent {
     Parts(Vec<ContentPart>),
 }
 
+/// A multimodal content part within a message (text or image).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ContentPart {
@@ -174,11 +179,13 @@ pub enum ContentPart {
     ImageUrl { image_url: ImageUrl },
 }
 
+/// URL or data-URI payload for an image message attachment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImageUrl {
     pub url: String,
 }
 
+/// Tool definition exposed to the model conforming to OpenAI format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenAITool {
     #[serde(rename = "type")]
@@ -186,6 +193,7 @@ pub struct OpenAITool {
     pub function: FunctionDefinition,
 }
 
+/// Function schema and description for a declared tool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FunctionDefinition {
     pub name: String,
@@ -195,6 +203,7 @@ pub struct FunctionDefinition {
     pub parameters: Option<serde_json::Value>,
 }
 
+/// Controls whether and how the model calls tools.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolChoice {
@@ -206,11 +215,13 @@ pub enum ToolChoice {
     },
 }
 
+/// Specific function selection inside a named tool choice.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FunctionChoice {
     pub name: String,
 }
 
+/// A tool invocation emitted by the model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
@@ -219,12 +230,14 @@ pub struct ToolCall {
     pub function: ToolCallFunction,
 }
 
+/// Function call parameters for an emitted tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCallFunction {
     pub name: String,
     pub arguments: String,
 }
 
+/// Desired format specification for model output (text, json_object, json_schema).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResponseFormat {
     #[serde(rename = "type")]
@@ -233,6 +246,7 @@ pub struct ResponseFormat {
     pub json_schema: Option<serde_json::Value>,
 }
 
+/// Non-streaming chat completion response payload (/v1/chat/completions).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatCompletionResponse {
     pub id: String,
@@ -243,6 +257,7 @@ pub struct ChatCompletionResponse {
     pub usage: Usage,
 }
 
+/// A single completion choice in a chat completion response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatCompletionChoice {
     pub index: usize,
@@ -250,6 +265,7 @@ pub struct ChatCompletionChoice {
     pub finish_reason: String,
 }
 
+/// Token usage accounting statistics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: usize,
@@ -257,6 +273,7 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
+/// Streaming chunk payload for Server-Sent Events chat completions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatCompletionChunk {
     pub id: String,
@@ -266,6 +283,7 @@ pub struct ChatCompletionChunk {
     pub choices: Vec<ChatCompletionChunkChoice>,
 }
 
+/// An individual choice chunk within a streaming chat completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatCompletionChunkChoice {
     pub index: usize,
@@ -274,6 +292,7 @@ pub struct ChatCompletionChunkChoice {
     pub finish_reason: Option<String>,
 }
 
+/// Incremental delta content within a streaming choice chunk.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ChatCompletionChunkDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -284,12 +303,14 @@ pub struct ChatCompletionChunkDelta {
     pub tool_calls: Option<Vec<ToolCall>>,
 }
 
+/// Response payload for model enumeration (/v1/models).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelList {
     pub object: String,
     pub data: Vec<ModelObject>,
 }
 
+/// Metadata description of a single available model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelObject {
     pub id: String,
@@ -302,6 +323,7 @@ pub struct ModelObject {
 // Embedding Models (Phase 2)
 // ============================================================================
 
+/// Request payload for text embedding creation (/v1/embeddings).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddingRequest {
     pub model: String,
@@ -310,6 +332,7 @@ pub struct EmbeddingRequest {
     pub user: Option<String>,
 }
 
+/// Input text representation for an embedding request, single string or array of strings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EmbeddingInput {
@@ -326,6 +349,7 @@ impl EmbeddingInput {
     }
 }
 
+/// Vector embedding data for an individual input index.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddingObject {
     pub object: String,
@@ -333,6 +357,7 @@ pub struct EmbeddingObject {
     pub embedding: Vec<f32>,
 }
 
+/// Completed response for a text embedding request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddingResponse {
     pub object: String,
@@ -345,6 +370,7 @@ pub struct EmbeddingResponse {
 // Ollama Models (Phase 3)
 // ============================================================================
 
+/// Ollama model tag describing local model artifact metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OllamaModelTag {
     pub name: String,
@@ -352,11 +378,13 @@ pub struct OllamaModelTag {
     pub size: u64,
 }
 
+/// Response listing available Ollama model tags (/api/tags).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OllamaTagsResponse {
     pub models: Vec<OllamaModelTag>,
 }
 
+/// Request payload for Ollama chat endpoint (/api/chat).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OllamaChatRequest {
     pub model: String,
@@ -365,6 +393,7 @@ pub struct OllamaChatRequest {
     pub stream: bool,
 }
 
+/// Request payload for Ollama text generation endpoint (/api/generate).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OllamaGenerateRequest {
     pub model: String,

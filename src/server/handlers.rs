@@ -20,10 +20,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub engine: Arc<dyn BackendEngine>,
-    pub mcp_manager: Option<Arc<MCPManager>>,
+#[derive(Clone, Debug)]
+pub(crate) struct AppState {
+    pub(crate) engine: Arc<dyn BackendEngine>,
+    pub(crate) mcp_manager: Option<Arc<MCPManager>>,
 }
 
 #[derive(serde::Serialize)]
@@ -53,7 +53,7 @@ struct DeltaView<'a> {
 
 // MARK: - Health & Info
 
-pub async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
+pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
     let languages = state.engine.supported_languages();
     let resp = serde_json::json!({
         "status": "ok",
@@ -69,7 +69,7 @@ pub async fn health_handler(State(state): State<AppState>) -> impl IntoResponse 
 
 // MARK: - Models
 
-pub async fn list_models_handler() -> impl IntoResponse {
+pub(crate) async fn list_models_handler() -> impl IntoResponse {
     let resp = ModelList {
         object: "list".to_string(),
         data: vec![
@@ -92,7 +92,7 @@ pub async fn list_models_handler() -> impl IntoResponse {
 
 // MARK: - Chat Completions
 
-pub async fn chat_completions_handler(
+pub(crate) async fn chat_completions_handler(
     State(state): State<AppState>,
     Json(req): Json<ChatCompletionRequest>,
 ) -> Response {
@@ -270,7 +270,8 @@ pub async fn chat_completions_handler(
             .header(header::CACHE_CONTROL, "no-cache")
             .header(header::CONNECTION, "keep-alive")
             .body(Body::from_stream(stream))
-            .unwrap()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+            .into_response()
     } else {
         // Non-streaming path with full MCP loop
         let effective_tools = match &req.tool_choice {
@@ -352,7 +353,7 @@ pub async fn chat_completions_handler(
 
 // MARK: - Responses Endpoint (/v1/responses)
 
-pub async fn responses_handler(
+pub(crate) async fn responses_handler(
     State(state): State<AppState>,
     Json(req): Json<ResponsesRequest>,
 ) -> Response {
@@ -479,7 +480,7 @@ fn compute_text_embedding(text: &str, dims: usize) -> Vec<f32> {
     vec
 }
 
-pub async fn embeddings_handler(
+pub(crate) async fn embeddings_handler(
     State(state): State<AppState>,
     Json(req): Json<EmbeddingRequest>,
 ) -> Response {
@@ -512,7 +513,7 @@ pub async fn embeddings_handler(
     Json(resp).into_response()
 }
 
-pub async fn ollama_tags_handler(State(_state): State<AppState>) -> Response {
+pub(crate) async fn ollama_tags_handler(State(_state): State<AppState>) -> Response {
     let models = vec![
         OllamaModelTag {
             name: "apple-intelligence".to_string(),
@@ -528,7 +529,7 @@ pub async fn ollama_tags_handler(State(_state): State<AppState>) -> Response {
     Json(OllamaTagsResponse { models }).into_response()
 }
 
-pub async fn ollama_chat_handler(
+pub(crate) async fn ollama_chat_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaChatRequest>,
 ) -> Response {
@@ -560,7 +561,7 @@ pub async fn ollama_chat_handler(
     }
 }
 
-pub async fn ollama_generate_handler(
+pub(crate) async fn ollama_generate_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaGenerateRequest>,
 ) -> Response {

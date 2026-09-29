@@ -1,7 +1,7 @@
 class Apfel < Formula
   desc "Apple Intelligence & Foundation Models CLI and OpenAI-compatible server"
   homepage "https://github.com/bhubbard/apfel-rs"
-  url "https://github.com/bhubbard/apfel-rs/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/bhubbard/apfel-rs/archive/refs/tags/v0.1.1.tar.gz"
   sha256 "3c4fca0b5946cb48f87cc81df4a24e563bee401e929721baac116099beb2ca7f"
   license "MIT"
   head "https://github.com/bhubbard/apfel-rs.git", branch: "main"

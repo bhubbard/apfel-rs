@@ -7,6 +7,8 @@ use crate::backend::engine::{BackendEngine, GenerateRequest, GenerateResponse, S
 use crate::core::error::ApfelError;
 use tokio::sync::mpsc;
 
+/// MLX on-device neural engine backend for Apple Silicon.
+#[derive(Debug)]
 pub struct MlxBackendEngine {
     model_name: String,
     context_limit: usize,

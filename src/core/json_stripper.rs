@@ -3,6 +3,8 @@
 // Part of apfel-rs
 // ============================================================================
 
+/// Utility for stripping markdown JSON fences from model responses without allocations.
+#[derive(Debug)]
 pub struct JSONFenceStripper;
 
 impl JSONFenceStripper {

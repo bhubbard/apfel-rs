@@ -17,6 +17,7 @@ pub use mlx_engine::MlxBackendEngine;
 pub use mock::MockEngine;
 pub use session::{SessionManager, SessionResult};
 
+/// Returns the default backend engine for the current platform and build configuration.
 pub fn default_engine() -> std::sync::Arc<dyn BackendEngine> {
     #[cfg(has_foundation_models)]
     {

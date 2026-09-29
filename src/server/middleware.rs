@@ -11,13 +11,14 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 
-pub struct ServerSecurityConfig {
+#[derive(Debug)]
+pub(crate) struct ServerSecurityConfig {
     pub allowed_origins: Vec<String>,
     pub required_token: Option<String>,
     pub footgun: bool,
 }
 
-pub async fn security_middleware(
+pub(crate) async fn security_middleware(
     State(config): State<Arc<ServerSecurityConfig>>,
     req: Request,
     next: Next,
@@ -26,7 +27,9 @@ pub async fn security_middleware(
 
     // 1. Origin check (CSRF protection for localhost)
     let origin_str = headers.get("origin").and_then(|v| v.to_str().ok());
-    if !OriginValidator::is_allowed(origin_str, &config.allowed_origins) {
+    if OriginValidator::origin_validation_constrains(config.footgun, &config.allowed_origins)
+        && !OriginValidator::is_allowed(origin_str, &config.allowed_origins)
+    {
         let err = ApfelError::ForbiddenOrigin(format!(
             "Origin '{}' not allowed by localhost CSRF protection",
             origin_str.unwrap_or_default()

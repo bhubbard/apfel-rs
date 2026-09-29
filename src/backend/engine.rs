@@ -8,6 +8,7 @@ use crate::core::models::OpenAIMessage;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+/// Parameters for a text generation request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GenerateRequest {
     pub prompt: String,
@@ -26,12 +27,14 @@ pub struct GenerateRequest {
     pub seed: Option<u64>,
 }
 
+/// Completed response from a text generation request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GenerateResponse {
     pub content: String,
     pub finish_reason: String,
 }
 
+/// Incremental chunk produced during streaming generation.
 #[derive(Debug, Clone)]
 pub enum StreamChunk {
     Delta(String),
@@ -39,7 +42,8 @@ pub enum StreamChunk {
     Error(ApfelError),
 }
 
-pub trait BackendEngine: Send + Sync {
+/// Abstract trait implemented by all backend neural inference engines.
+pub trait BackendEngine: std::fmt::Debug + Send + Sync {
     fn is_available(&self) -> bool;
     fn context_size(&self) -> usize;
     fn count_tokens(&self, text: &str) -> usize;

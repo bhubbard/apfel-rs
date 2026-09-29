@@ -6,6 +6,7 @@
 use crate::core::models::OpenAIMessage;
 use serde::{Deserialize, Serialize};
 
+/// Strategy used to truncate or prune messages when conversation exceeds context budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ContextStrategy {
@@ -37,6 +38,7 @@ impl std::str::FromStr for ContextStrategy {
     }
 }
 
+/// Configuration settings controlling context management and token limits.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextConfig {
     pub strategy: ContextStrategy,
@@ -56,6 +58,8 @@ impl Default for ContextConfig {
     }
 }
 
+/// Manages conversation context sizing and message pruning algorithms.
+#[derive(Debug)]
 pub struct ContextManager;
 
 impl ContextManager {

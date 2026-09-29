@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+/// Validates HTTP request origins and authorization tokens for localhost security.
+#[derive(Debug)]
 pub struct OriginValidator;
 
 impl OriginValidator {

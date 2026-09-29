@@ -6,6 +6,7 @@
 use crate::core::models::OpenAITool;
 use serde::{Deserialize, Serialize};
 
+/// Represents a parsed tool call extracted from model output.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedToolCall {
     pub id: String,
@@ -13,6 +14,7 @@ pub struct ParsedToolCall {
     pub arguments_string: String,
 }
 
+/// Execution record of a tool invocation within a conversation turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolLogEntry {
     pub name: String,
@@ -21,6 +23,8 @@ pub struct ToolLogEntry {
     pub is_error: bool,
 }
 
+/// Handler for formatting tool calling prompts and detecting tool invocations.
+#[derive(Debug)]
 pub struct ToolCallHandler;
 
 impl ToolCallHandler {
@@ -198,6 +202,8 @@ impl ToolCallHandler {
     }
 }
 
+/// Truncates excessive tool execution output while reserving headroom for context tokens.
+#[derive(Debug)]
 pub struct ToolOutputTruncator;
 
 impl ToolOutputTruncator {
@@ -233,6 +239,8 @@ impl ToolOutputTruncator {
     }
 }
 
+/// Gates streaming output to buffer plausible tool call prefixes before emission.
+#[derive(Debug)]
 pub struct StreamingToolCallGate;
 
 impl StreamingToolCallGate {

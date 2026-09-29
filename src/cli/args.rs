@@ -5,6 +5,7 @@
 
 use clap::Parser;
 
+/// Parsed command-line arguments for the apfel CLI binary.
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "apfel",
