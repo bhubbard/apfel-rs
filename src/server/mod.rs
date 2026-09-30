@@ -50,6 +50,10 @@ pub async fn run_server(
             post(handlers::chat_completions_handler),
         )
         .route("/v1/responses", post(handlers::responses_handler))
+        .route(
+            "/v1/responses/input_tokens",
+            post(handlers::responses_input_tokens_handler),
+        )
         .route("/v1/embeddings", post(handlers::embeddings_handler))
         .route("/api/tags", get(handlers::ollama_tags_handler))
         .route("/api/chat", post(handlers::ollama_chat_handler))

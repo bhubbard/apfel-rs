@@ -87,18 +87,20 @@ extern "C" fn on_bridge_chunk(
 }
 
 /// Native macOS FoundationModels engine leveraging Apple Intelligence on Apple Silicon.
-#[derive(Debug)]
-pub struct FoundationModelsEngine;
+#[derive(Debug, Default)]
+pub struct FoundationModelsEngine {
+    pub adapter_path: Option<String>,
+}
 
 impl FoundationModelsEngine {
     pub fn new() -> Self {
-        Self
+        Self { adapter_path: None }
     }
-}
 
-impl Default for FoundationModelsEngine {
-    fn default() -> Self {
-        Self::new()
+    pub fn with_adapter(adapter: impl Into<String>) -> Self {
+        Self {
+            adapter_path: Some(adapter.into()),
+        }
     }
 }
 
@@ -107,6 +109,10 @@ impl BackendEngine for FoundationModelsEngine {
         // SAFETY: Calling `apfel_bridge_is_available` from the Swift bridge static library linked at build time.
         // Takes no arguments and has no side effects on Rust memory.
         unsafe { apfel_bridge_is_available() }
+    }
+
+    fn adapter_path(&self) -> Option<&str> {
+        self.adapter_path.as_deref()
     }
 
     fn context_size(&self) -> usize {
@@ -118,6 +124,13 @@ impl BackendEngine for FoundationModelsEngine {
         } else {
             4096
         }
+    }
+
+    fn context_window_measured(&self) -> bool {
+        // SAFETY: Calling `apfel_bridge_context_size` from the Swift bridge static library linked at build time.
+        // Takes no arguments and has no side effects on Rust memory.
+        let size = unsafe { apfel_bridge_context_size() };
+        size > 4096
     }
 
     fn count_tokens(&self, text: &str) -> usize {

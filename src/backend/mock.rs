@@ -14,7 +14,10 @@ pub struct MockEngine {
     pub responses: std::sync::Mutex<Vec<String>>,
     pub available: bool,
     pub context_window: usize,
+    pub context_window_measured: bool,
     pub finish_reason: String,
+    pub adapter_path: Option<String>,
+    pub last_request: std::sync::Mutex<Option<GenerateRequest>>,
 }
 
 impl MockEngine {
@@ -24,7 +27,23 @@ impl MockEngine {
             responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
+            context_window_measured: true,
             finish_reason: "stop".to_string(),
+            adapter_path: None,
+            last_request: std::sync::Mutex::new(None),
+        }
+    }
+
+    pub fn with_adapter(adapter: impl Into<String>) -> Self {
+        Self {
+            response: "This is a response from the mock backend engine.".to_string(),
+            responses: std::sync::Mutex::new(Vec::new()),
+            available: true,
+            context_window: 4096,
+            context_window_measured: true,
+            finish_reason: "stop".to_string(),
+            adapter_path: Some(adapter.into()),
+            last_request: std::sync::Mutex::new(None),
         }
     }
 
@@ -34,7 +53,10 @@ impl MockEngine {
             responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
+            context_window_measured: true,
             finish_reason: "stop".to_string(),
+            adapter_path: None,
+            last_request: std::sync::Mutex::new(None),
         }
     }
 
@@ -47,7 +69,10 @@ impl MockEngine {
             responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
+            context_window_measured: true,
             finish_reason: finish_reason.into(),
+            adapter_path: None,
+            last_request: std::sync::Mutex::new(None),
         }
     }
 
@@ -61,8 +86,15 @@ impl MockEngine {
             responses: std::sync::Mutex::new(responses.into_iter().map(Into::into).collect()),
             available: true,
             context_window: 4096,
+            context_window_measured: true,
             finish_reason: "stop".to_string(),
+            adapter_path: None,
+            last_request: std::sync::Mutex::new(None),
         }
+    }
+
+    pub fn last_request(&self) -> Option<GenerateRequest> {
+        self.last_request.lock().ok().and_then(|g| g.clone())
     }
 }
 
@@ -81,6 +113,14 @@ impl BackendEngine for MockEngine {
         self.context_window
     }
 
+    fn context_window_measured(&self) -> bool {
+        self.context_window_measured
+    }
+
+    fn adapter_path(&self) -> Option<&str> {
+        self.adapter_path.as_deref()
+    }
+
     fn count_tokens(&self, text: &str) -> usize {
         (text.chars().count() / 4).max(1)
     }
@@ -96,8 +136,12 @@ impl BackendEngine for MockEngine {
 
     fn stream_generate(
         &self,
-        _req: &GenerateRequest,
+        req: &GenerateRequest,
     ) -> Result<mpsc::Receiver<StreamChunk>, ApfelError> {
+        if let Ok(mut lock) = self.last_request.lock() {
+            *lock = Some(req.clone());
+        }
+
         if !self.available {
             return Err(ApfelError::ModelUnavailable(
                 "Mock engine is unavailable".to_string(),
@@ -132,7 +176,10 @@ impl BackendEngine for MockEngine {
         Ok(rx)
     }
 
-    fn generate(&self, _req: &GenerateRequest) -> Result<GenerateResponse, ApfelError> {
+    fn generate(&self, req: &GenerateRequest) -> Result<GenerateResponse, ApfelError> {
+        if let Ok(mut lock) = self.last_request.lock() {
+            *lock = Some(req.clone());
+        }
         if !self.available {
             return Err(ApfelError::ModelUnavailable(
                 "Mock engine is unavailable".to_string(),

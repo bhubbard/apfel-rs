@@ -1,4 +1,4 @@
-use apfel::backend::MockEngine;
+use apfel::backend::{BackendEngine, MockEngine};
 use apfel::core::models::ChatCompletionResponse;
 use apfel::server::run_server;
 use std::sync::Arc;
@@ -40,6 +40,8 @@ async fn test_server_routes_and_security() {
         .await
         .expect("Health request failed");
     assert_eq!(res.status(), 200);
+    let health_json: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(health_json["context_window_measured"], true);
 
     // 2. Health check with missing auth -> 401 Unauthorized
     let res = client
@@ -155,11 +157,17 @@ async fn test_server_routes_and_security() {
     assert_eq!(res.status(), 200);
     let models_body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(models_body["object"], "list");
-    assert!(models_body["data"]
-        .as_array()
-        .unwrap()
+    let models_data = models_body["data"].as_array().unwrap();
+    for m in models_data {
+        assert!(m["context_window"].is_number());
+        assert!(m["context_window_measured"].is_boolean());
+    }
+    let apple_model = models_data
         .iter()
-        .any(|m| m["id"] == "apple-foundationmodel"));
+        .find(|m| m["id"] == "apple-foundationmodel")
+        .unwrap();
+    assert_eq!(apple_model["context_window"], 4096);
+    assert_eq!(apple_model["context_window_measured"], true);
 
     // 10. OpenAI responses endpoint POST /v1/responses
     let responses_body = serde_json::json!({
@@ -290,4 +298,320 @@ async fn test_server_routes_and_security() {
     let stream_stop_text = res.text().await.unwrap();
     assert!(stream_stop_text.contains("chat.completion.chunk"));
     assert!(stream_stop_text.contains("[DONE]"));
+
+    // 18. OpenAI SDK Responses input_tokens preflight (Arthur-Ficial #485)
+    let preflight_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "instructions": "You are a concise assistant.",
+        "input": "Calculate 15 * 3",
+        "tools": [
+            {
+                "type": "function",
+                "name": "calculator",
+                "description": "Performs mathematical arithmetic",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "expr": { "type": "string" }
+                    }
+                }
+            }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/responses/input_tokens", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&preflight_body)
+        .send()
+        .await
+        .expect("Input tokens preflight request failed");
+    assert_eq!(res.status(), 200);
+    let preflight_resp: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(preflight_resp["object"], "response.input_tokens");
+    let tokens = preflight_resp["input_tokens"].as_u64().unwrap();
+    assert!(tokens > 0);
+
+    // 19. Responses input_tokens with messages array input
+    let preflight_msgs_body = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "input": [
+            { "role": "user", "content": "How many tokens are here?" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/responses/input_tokens", base_url))
+        .header("Authorization", "Bearer test-token-123")
+        .json(&preflight_msgs_body)
+        .send()
+        .await
+        .expect("Input tokens messages preflight failed");
+    assert_eq!(res.status(), 200);
+    let msgs_resp: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(msgs_resp["object"], "response.input_tokens");
+    assert_eq!(
+        msgs_resp["input_tokens"],
+        mock.count_tokens("How many tokens are here?") as u64
+    );
+}
+
+#[tokio::test]
+async fn test_context_window_measured_disclosure() {
+    let mut mock = MockEngine::new();
+    mock.context_window = 4096;
+    mock.context_window_measured = false;
+    let mock = Arc::new(mock);
+
+    let port = 9125;
+    let host = "127.0.0.1";
+    let token = None;
+    let allowed_origins = vec!["*".to_string()];
+
+    let engine_clone = mock.clone();
+    tokio::spawn(async move {
+        let _ = run_server(host, port, token, allowed_origins, true, engine_clone, None).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}:{}", host, port);
+
+    // Health check returns context_window_measured: false
+    let res = client
+        .get(format!("{}/health", base_url))
+        .send()
+        .await
+        .expect("Health request failed");
+    assert_eq!(res.status(), 200);
+    let health_json: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(health_json["context_size"], 4096);
+    assert_eq!(health_json["context_window_measured"], false);
+
+    // Models endpoint returns context_window_measured: false for cold-start model
+    let res = client
+        .get(format!("{}/v1/models", base_url))
+        .send()
+        .await
+        .expect("List models failed");
+    assert_eq!(res.status(), 200);
+    let models_body: serde_json::Value = res.json().await.unwrap();
+    let models_data = models_body["data"].as_array().unwrap();
+    let apple_model = models_data
+        .iter()
+        .find(|m| m["id"] == "apple-foundationmodel")
+        .unwrap();
+    assert_eq!(apple_model["context_window"], 4096);
+    assert_eq!(apple_model["context_window_measured"], false);
+}
+
+#[tokio::test]
+async fn test_adapter_exposed_in_models_endpoint() {
+    let mock = Arc::new(MockEngine::with_adapter("/path/to/sentiment.fmadapter"));
+    let port = 9126;
+    let host = "127.0.0.1";
+    let token = None;
+    let allowed_origins = vec![
+        "http://localhost".to_string(),
+        "http://127.0.0.1".to_string(),
+    ];
+
+    let engine_clone = mock.clone();
+    tokio::spawn(async move {
+        let _ = run_server(host, port, token, allowed_origins, true, engine_clone, None).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}:{}", host, port);
+
+    let res = client
+        .get(format!("{}/v1/models", base_url))
+        .send()
+        .await
+        .expect("List models failed");
+    assert_eq!(res.status(), 200);
+    let models_body: serde_json::Value = res.json().await.unwrap();
+    let models_data = models_body["data"].as_array().unwrap();
+
+    let adapter_entry = models_data
+        .iter()
+        .find(|m| m["id"] == "apple-foundationmodel:adapter-sentiment");
+    assert!(
+        adapter_entry.is_some(),
+        "Adapter model entry should be present in /v1/models"
+    );
+    let entry = adapter_entry.unwrap();
+    assert_eq!(entry["owned_by"], "user-adapter");
+
+    // Also assert that apple-content-tagging is listed
+    let tagging_entry = models_data
+        .iter()
+        .find(|m| m["id"] == "apple-content-tagging");
+    assert!(
+        tagging_entry.is_some(),
+        "apple-content-tagging model should be present in /v1/models"
+    );
+}
+
+#[tokio::test]
+async fn test_content_tagging_routing_and_use_case() {
+    let mock = Arc::new(MockEngine::with_response("classified: billing"));
+    let port = 9127;
+    let host = "127.0.0.1";
+    let token = None;
+    let allowed_origins = vec!["*".to_string()];
+
+    let engine_clone = mock.clone();
+    tokio::spawn(async move {
+        let _ = run_server(host, port, token, allowed_origins, true, engine_clone, None).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}:{}", host, port);
+
+    // 1. Non-streaming with model "apple-content-tagging"
+    let tag_req = serde_json::json!({
+        "model": "apple-content-tagging",
+        "messages": [
+            { "role": "user", "content": "Categorize this support ticket" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .json(&tag_req)
+        .send()
+        .await
+        .expect("Chat completion failed");
+    assert_eq!(res.status(), 200);
+    let last = mock
+        .last_request()
+        .expect("Mock should have received a request");
+    assert_eq!(last.use_case, Some("content_tagging".to_string()));
+
+    // 2. Non-streaming with standard model -> use_case is None
+    let std_req = serde_json::json!({
+        "model": "apple-foundationmodel",
+        "messages": [
+            { "role": "user", "content": "General text generation" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .json(&std_req)
+        .send()
+        .await
+        .expect("Chat completion failed");
+    assert_eq!(res.status(), 200);
+    let last = mock
+        .last_request()
+        .expect("Mock should have received a request");
+    assert_eq!(last.use_case, None);
+
+    // 3. Streaming with model matching "classif" -> use_case is Some("content_tagging")
+    let stream_req = serde_json::json!({
+        "model": "support-classifier-v1",
+        "stream": true,
+        "messages": [
+            { "role": "user", "content": "Ticket classification" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/v1/chat/completions", base_url))
+        .json(&stream_req)
+        .send()
+        .await
+        .expect("Streaming chat completion failed");
+    assert_eq!(res.status(), 200);
+    let last = mock
+        .last_request()
+        .expect("Mock should have received a request");
+    assert_eq!(last.use_case, Some("content_tagging".to_string()));
+}
+
+#[tokio::test]
+async fn test_embeddings_and_ollama_endpoints() {
+    let mock = Arc::new(MockEngine::with_response("Ollama response from mock"));
+    let port = 9128;
+    let host = "127.0.0.1";
+    let token = None;
+    let allowed_origins = vec!["*".to_string()];
+
+    let engine_clone = mock.clone();
+    tokio::spawn(async move {
+        let _ = run_server(host, port, token, allowed_origins, true, engine_clone, None).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}:{}", host, port);
+
+    // 1. POST /v1/embeddings
+    let emb_req = serde_json::json!({
+        "model": "text-embedding-3-small",
+        "input": ["Apple Foundation Models", "On-device intelligence"]
+    });
+    let res = client
+        .post(format!("{}/v1/embeddings", base_url))
+        .json(&emb_req)
+        .send()
+        .await
+        .expect("Embeddings request failed");
+    assert_eq!(res.status(), 200);
+    let emb_json: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(emb_json["object"], "list");
+    let data = emb_json["data"].as_array().expect("data array");
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0]["index"], 0);
+    assert_eq!(data[1]["index"], 1);
+    let emb0 = data[0]["embedding"].as_array().unwrap();
+    assert_eq!(emb0.len(), 384);
+    assert!(emb_json["usage"]["prompt_tokens"].as_u64().unwrap() > 0);
+
+    // 2. GET /api/tags (Ollama models list)
+    let res = client
+        .get(format!("{}/api/tags", base_url))
+        .send()
+        .await
+        .expect("Ollama tags request failed");
+    assert_eq!(res.status(), 200);
+    let tags_json: serde_json::Value = res.json().await.unwrap();
+    let models = tags_json["models"].as_array().expect("models array");
+    assert!(models.iter().any(|m| m["name"] == "apple-intelligence"));
+
+    // 3. POST /api/generate (Ollama generate)
+    let ollama_gen = serde_json::json!({
+        "model": "apple-intelligence",
+        "prompt": "What is the capital of France?"
+    });
+    let res = client
+        .post(format!("{}/api/generate", base_url))
+        .json(&ollama_gen)
+        .send()
+        .await
+        .expect("Ollama generate failed");
+    assert_eq!(res.status(), 200);
+    let gen_json: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(gen_json["model"], "apple-intelligence");
+    assert_eq!(gen_json["done"], true);
+    assert_eq!(gen_json["response"], "Ollama response from mock");
+
+    // 4. POST /api/chat (Ollama chat)
+    let ollama_chat = serde_json::json!({
+        "model": "apple-intelligence",
+        "messages": [
+            { "role": "user", "content": "Hello Ollama" }
+        ]
+    });
+    let res = client
+        .post(format!("{}/api/chat", base_url))
+        .json(&ollama_chat)
+        .send()
+        .await
+        .expect("Ollama chat failed");
+    assert_eq!(res.status(), 200);
+    let chat_json: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(chat_json["model"], "apple-intelligence");
+    assert_eq!(chat_json["done"], true);
+    assert_eq!(chat_json["message"]["content"], "Ollama response from mock");
 }

@@ -321,6 +321,10 @@ pub struct ModelObject {
     pub object: String,
     pub created: i64,
     pub owned_by: String,
+    #[serde(default)]
+    pub context_window: usize,
+    #[serde(default)]
+    pub context_window_measured: bool,
 }
 
 // ============================================================================

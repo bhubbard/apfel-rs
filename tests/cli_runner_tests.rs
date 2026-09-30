@@ -361,3 +361,100 @@ async fn test_cli_runner_stop_flag() {
         ApfelExitCodes::USAGE_ERROR
     );
 }
+
+#[tokio::test]
+async fn test_cli_runner_batch_flag_conflicts() {
+    let mock = Arc::new(MockEngine::new());
+
+    // --batch --stream conflict
+    let args_stream = CliArgs::parse_from(&["apfel", "--batch", "--stream"]);
+    assert_eq!(
+        run_cli_with_engine(args_stream, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --batch --chat conflict
+    let args_chat = CliArgs::parse_from(&["apfel", "--batch", "--chat"]);
+    assert_eq!(
+        run_cli_with_engine(args_chat, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --batch --serve conflict
+    let args_serve = CliArgs::parse_from(&["apfel", "--batch", "--serve"]);
+    assert_eq!(
+        run_cli_with_engine(args_serve, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --batch --benchmark conflict
+    let args_bench = CliArgs::parse_from(&["apfel", "--batch", "--benchmark"]);
+    assert_eq!(
+        run_cli_with_engine(args_bench, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_adapter_path_validation() {
+    let mock = Arc::new(MockEngine::new());
+
+    // Non-existent adapter path must fail with USAGE_ERROR
+    let args_bad = CliArgs::parse_from(&[
+        "apfel",
+        "--adapter",
+        "/nonexistent/path/to/my_adapter.fmadapter",
+        "Hello",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_bad, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // Valid existing file path succeeds
+    let dir = tempfile::tempdir().unwrap();
+    let adapter_file = dir.path().join("fine_tuned.fmadapter");
+    std::fs::write(&adapter_file, "adapter-weights-content").unwrap();
+
+    let args_good = CliArgs::parse_from(&[
+        "apfel",
+        "--no-stream",
+        "--adapter",
+        adapter_file.to_str().unwrap(),
+        "Hello",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_good, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_env_variable_fallback_for_serve() {
+    let mock = Arc::new(MockEngine::new());
+
+    // Case 1: Explicit CLI flag --temperature passed to --serve -> must reject with USAGE_ERROR
+    let mut args_explicit = CliArgs::parse_from(&["apfel", "--serve", "--temperature", "0.7"]);
+    args_explicit.explicit_cli_args = Some(vec!["--serve".into(), "--temperature".into()]);
+    assert_eq!(
+        run_cli_with_engine(args_explicit, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // Case 2: Explicit CLI flag -t passed to --model-info -> must reject with USAGE_ERROR
+    let mut args_explicit_info = CliArgs::parse_from(&["apfel", "--model-info", "-t", "0.7"]);
+    args_explicit_info.explicit_cli_args = Some(vec!["--model-info".into(), "-t".into()]);
+    assert_eq!(
+        run_cli_with_engine(args_explicit_info, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // Case 3: APFEL_TEMPERATURE set in environment (NOT passed on CLI) -> must succeed without failing
+    let mut args_env_only = CliArgs::parse_from(&["apfel", "--model-info"]);
+    args_env_only.temperature = Some(0.7);
+    args_env_only.explicit_cli_args = Some(vec!["--model-info".into()]);
+    assert_eq!(
+        run_cli_with_engine(args_env_only, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+}

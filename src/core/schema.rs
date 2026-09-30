@@ -62,14 +62,63 @@ impl SchemaParser {
             .as_object()
             .ok_or_else(|| ApfelError::Usage("Schema root must be a JSON object".to_string()))?;
 
-        Self::parse_object(obj, root_name, 0)
+        Self::parse_object(obj, root_name, obj, 0).map(|(ir, _)| ir)
     }
 
-    fn parse_object(
-        obj: &serde_json::Map<String, serde_json::Value>,
+    fn resolve_ref<'a>(
+        root: &'a serde_json::Map<String, serde_json::Value>,
+        ref_str: &str,
+    ) -> Result<&'a serde_json::Map<String, serde_json::Value>, ApfelError> {
+        let path = if let Some(stripped) = ref_str.strip_prefix("#/") {
+            stripped
+        } else if let Some(stripped) = ref_str.strip_prefix('#') {
+            stripped.trim_start_matches('/')
+        } else {
+            ref_str.trim_start_matches('/')
+        };
+
+        if path.is_empty() {
+            return Ok(root);
+        }
+
+        let mut current_map = root;
+        let parts: Vec<&str> = path.split('/').collect();
+
+        for (idx, part) in parts.iter().enumerate() {
+            let unescaped = part.replace("~1", "/").replace("~0", "~");
+            let val = current_map.get(&unescaped).ok_or_else(|| {
+                ApfelError::Usage(format!(
+                    "Unresolved schema reference '{}': key '{}' not found",
+                    ref_str, unescaped
+                ))
+            })?;
+
+            if idx == parts.len() - 1 {
+                return val.as_object().ok_or_else(|| {
+                    ApfelError::Usage(format!(
+                        "Schema reference '{}' does not resolve to an object",
+                        ref_str
+                    ))
+                });
+            } else {
+                current_map = val.as_object().ok_or_else(|| {
+                    ApfelError::Usage(format!(
+                        "Schema reference '{}': intermediate token '{}' is not an object",
+                        ref_str, unescaped
+                    ))
+                })?;
+            }
+        }
+
+        Err(ApfelError::Usage(format!("Empty reference '{}'", ref_str)))
+    }
+
+    fn parse_object<'a>(
+        obj: &'a serde_json::Map<String, serde_json::Value>,
         name: &str,
+        root: &'a serde_json::Map<String, serde_json::Value>,
         depth: usize,
-    ) -> Result<SchemaIR, ApfelError> {
+    ) -> Result<(SchemaIR, bool), ApfelError> {
         if depth > Self::MAX_SCHEMA_DEPTH {
             return Err(ApfelError::Usage(format!(
                 "JSON schema exceeds maximum nesting depth of {}",
@@ -77,15 +126,41 @@ impl SchemaParser {
             )));
         }
 
-        let (node, _nullable) = Self::normalize_union(obj)?;
+        let (mut node, mut is_nullable) = Self::normalize_union(obj)?;
+        let mut ref_depth = depth;
+        let mut override_desc = None;
+
+        while let Some(ref_val) = node.get("$ref") {
+            if ref_depth > Self::MAX_SCHEMA_DEPTH {
+                return Err(ApfelError::Usage(format!(
+                    "JSON schema exceeds maximum nesting depth of {}",
+                    Self::MAX_SCHEMA_DEPTH
+                )));
+            }
+            ref_depth += 1;
+            let ref_str = ref_val
+                .as_str()
+                .ok_or_else(|| ApfelError::Usage("'$ref' must be a string".to_string()))?;
+            if override_desc.is_none() {
+                if let Some(desc) = node.get("description").and_then(|v| v.as_str()) {
+                    override_desc = Some(desc.to_string());
+                }
+            }
+            let resolved = Self::resolve_ref(root, ref_str)?;
+            let (normalized_resolved, resolved_nullable) = Self::normalize_union(resolved)?;
+            is_nullable = is_nullable || resolved_nullable;
+            node = normalized_resolved;
+        }
+
         let node_type = node
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("object");
-        let description = node
-            .get("description")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let description = override_desc.or_else(|| {
+            node.get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
 
         match node_type {
             "object" => {
@@ -113,14 +188,22 @@ impl SchemaParser {
                     let prop_obj = val.as_object().ok_or_else(|| {
                         ApfelError::Usage(format!("Property '{}' must be an object", key))
                     })?;
-                    let (prop_node, prop_nullable) = Self::normalize_union(prop_obj)?;
-                    let child_ir = Self::parse_object(prop_obj, key, depth + 1)?;
-                    let child_desc = prop_node
+                    let (child_ir, child_nullable) =
+                        Self::parse_object(prop_obj, key, root, ref_depth + 1)?;
+                    let child_desc = prop_obj
                         .get("description")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+                        .map(|s| s.to_string())
+                        .or_else(|| match &child_ir {
+                            SchemaIR::Object { description, .. } => description.clone(),
+                            SchemaIR::String { description, .. } => description.clone(),
+                            SchemaIR::Integer { description, .. } => description.clone(),
+                            SchemaIR::Number { description, .. } => description.clone(),
+                            SchemaIR::Bool { description, .. } => description.clone(),
+                            SchemaIR::Array { .. } => None,
+                        });
 
-                    let is_optional = !required_set.contains(key) || prop_nullable;
+                    let is_optional = !required_set.contains(key) || child_nullable;
                     properties.push(PropertyIR {
                         name: key.clone(),
                         description: child_desc,
@@ -129,11 +212,14 @@ impl SchemaParser {
                     });
                 }
 
-                Ok(SchemaIR::Object {
-                    name: name.to_string(),
-                    description,
-                    properties,
-                })
+                Ok((
+                    SchemaIR::Object {
+                        name: name.to_string(),
+                        description,
+                        properties,
+                    },
+                    is_nullable,
+                ))
             }
             "string" => {
                 let enum_vals = node.get("enum").and_then(|v| v.as_array()).map(|arr| {
@@ -142,24 +228,36 @@ impl SchemaParser {
                         .collect()
                 });
 
-                Ok(SchemaIR::String {
+                Ok((
+                    SchemaIR::String {
+                        name: name.to_string(),
+                        description,
+                        enum_values: enum_vals,
+                    },
+                    is_nullable,
+                ))
+            }
+            "integer" => Ok((
+                SchemaIR::Integer {
                     name: name.to_string(),
                     description,
-                    enum_values: enum_vals,
-                })
-            }
-            "integer" => Ok(SchemaIR::Integer {
-                name: name.to_string(),
-                description,
-            }),
-            "number" => Ok(SchemaIR::Number {
-                name: name.to_string(),
-                description,
-            }),
-            "boolean" => Ok(SchemaIR::Bool {
-                name: name.to_string(),
-                description,
-            }),
+                },
+                is_nullable,
+            )),
+            "number" => Ok((
+                SchemaIR::Number {
+                    name: name.to_string(),
+                    description,
+                },
+                is_nullable,
+            )),
+            "boolean" => Ok((
+                SchemaIR::Bool {
+                    name: name.to_string(),
+                    description,
+                },
+                is_nullable,
+            )),
             "array" => {
                 let items_val = node.get("items").ok_or_else(|| {
                     ApfelError::Usage(format!("Array '{}' is missing 'items' schema", name))
@@ -167,11 +265,15 @@ impl SchemaParser {
                 let items_obj = items_val.as_object().ok_or_else(|| {
                     ApfelError::Usage(format!("'items' in array '{}' must be an object", name))
                 })?;
-                let inner = Self::parse_object(items_obj, &format!("{}_item", name), depth + 1)?;
-                Ok(SchemaIR::Array {
-                    item_name: name.to_string(),
-                    items: Box::new(inner),
-                })
+                let (inner, _) =
+                    Self::parse_object(items_obj, &format!("{}_item", name), root, ref_depth + 1)?;
+                Ok((
+                    SchemaIR::Array {
+                        item_name: name.to_string(),
+                        items: Box::new(inner),
+                    },
+                    is_nullable,
+                ))
             }
             other => Err(ApfelError::Usage(format!(
                 "Unsupported schema type: {}",

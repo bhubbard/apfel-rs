@@ -20,7 +20,12 @@ pub struct CliArgs {
     pub prompt: Option<String>,
 
     /// System instructions for the model
-    #[arg(short = 's', long = "system", value_name = "INSTRUCTIONS")]
+    #[arg(
+        short = 's',
+        long = "system",
+        value_name = "INSTRUCTIONS",
+        env = "APFEL_SYSTEM_PROMPT"
+    )]
     pub system: Option<String>,
 
     /// Attach text or file content to prompt (repeatable)
@@ -43,6 +48,10 @@ pub struct CliArgs {
     #[arg(long = "serve")]
     pub serve: bool,
 
+    /// Run batch processing reading JSONL from stdin and writing JSONL to stdout
+    #[arg(long = "batch")]
+    pub batch: bool,
+
     /// Port for the HTTP server
     #[arg(long = "port", default_value = "8080")]
     pub port: u16,
@@ -64,12 +73,16 @@ pub struct CliArgs {
     pub footgun: bool,
 
     /// Backend engine to use: foundation (default on macOS), mlx, or mock
-    #[arg(long = "engine", value_name = "ENGINE")]
+    #[arg(long = "engine", value_name = "ENGINE", env = "APFEL_ENGINE")]
     pub engine: Option<String>,
 
     /// Specific model name or HuggingFace repo (used with mlx engine)
-    #[arg(short = 'm', long = "model", value_name = "MODEL")]
+    #[arg(short = 'm', long = "model", value_name = "MODEL", env = "APFEL_MODEL")]
     pub model: Option<String>,
+
+    /// Fine-tuned model adapter path (.fmadapter or LoRA weights)
+    #[arg(long = "adapter", value_name = "PATH", env = "APFEL_ADAPTER")]
+    pub adapter: Option<String>,
 
     /// Show model information, availability, and context size
     #[arg(long = "model-info")]
@@ -104,19 +117,19 @@ pub struct CliArgs {
     pub stop: Vec<String>,
 
     /// Sampling temperature
-    #[arg(short = 't', long = "temperature")]
+    #[arg(short = 't', long = "temperature", env = "APFEL_TEMPERATURE")]
     pub temperature: Option<f64>,
 
     /// Nucleus sampling probability threshold
-    #[arg(long = "top-p")]
+    #[arg(long = "top-p", env = "APFEL_TOP_P")]
     pub top_p: Option<f64>,
 
     /// Maximum response tokens to generate
-    #[arg(long = "max-tokens")]
+    #[arg(long = "max-tokens", env = "APFEL_MAX_TOKENS")]
     pub max_tokens: Option<usize>,
 
     /// Deterministic RNG seed
-    #[arg(long = "seed")]
+    #[arg(long = "seed", env = "APFEL_SEED")]
     pub seed: Option<u64>,
 
     /// Relax safety guardrails for permissive content transformations
@@ -124,7 +137,12 @@ pub struct CliArgs {
     pub permissive: bool,
 
     /// Output format: text, json, or raw
-    #[arg(short = 'o', long = "output", default_value = "text")]
+    #[arg(
+        short = 'o',
+        long = "output",
+        default_value = "text",
+        env = "APFEL_OUTPUT"
+    )]
     pub output: String,
 
     /// Suppress non-essential output
@@ -140,7 +158,11 @@ pub struct CliArgs {
     pub debug: bool,
 
     /// Context strategy: newest-first, oldest-first, sliding-window, summarize, strict
-    #[arg(long = "context-strategy", default_value = "newest-first")]
+    #[arg(
+        long = "context-strategy",
+        default_value = "newest-first",
+        env = "APFEL_CONTEXT_STRATEGY"
+    )]
     pub context_strategy: String,
 
     /// Maximum turns for sliding-window context strategy
@@ -162,4 +184,30 @@ pub struct CliArgs {
     /// Generate shell completion script (bash, zsh, fish, powershell)
     #[arg(long = "completions", value_name = "SHELL")]
     pub completions: Option<String>,
+
+    /// Explicit CLI flag tokens passed by the user (used to disambiguate env var fallbacks)
+    #[arg(skip)]
+    pub explicit_cli_args: Option<Vec<String>>,
+}
+
+impl CliArgs {
+    /// Returns true if a given flag was explicitly passed on the command line (rather than via environment fallback).
+    pub fn was_flag_explicit(&self, short: &str, long: &str) -> bool {
+        if let Some(explicit) = &self.explicit_cli_args {
+            return explicit.iter().any(|arg| {
+                (!short.is_empty() && arg == short)
+                    || (!long.is_empty() && (arg == long || arg.starts_with(&format!("{}=", long))))
+            });
+        }
+        for arg in std::env::args_os() {
+            if let Some(s) = arg.to_str() {
+                if (!short.is_empty() && s == short)
+                    || (!long.is_empty() && (s == long || s.starts_with(&format!("{}=", long))))
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }

@@ -61,6 +61,7 @@ pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoRe
         "on_device": true,
         "available": state.engine.is_available(),
         "context_size": state.engine.context_size(),
+        "context_window_measured": state.engine.context_window_measured(),
         "languages": languages,
         "framework": "FoundationModels (macOS 26+)"
     });
@@ -69,29 +70,77 @@ pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoRe
 
 // MARK: - Models
 
-pub(crate) async fn list_models_handler() -> impl IntoResponse {
+pub(crate) async fn list_models_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let engine_context = state.engine.context_size();
+    let engine_measured = state.engine.context_window_measured();
+    let is_mlx = state.engine.model_name().contains("mlx");
+
+    let (apple_context, apple_measured) = if !is_mlx {
+        (engine_context, engine_measured)
+    } else {
+        (4096, false)
+    };
+
+    let (mlx_context, mlx_measured) = if is_mlx {
+        (engine_context, engine_measured)
+    } else {
+        (8192, true)
+    };
+
+    let mut models = vec![
+        ModelObject {
+            id: "apple-foundationmodel".to_string(),
+            object: "model".to_string(),
+            created: 1718000000,
+            owned_by: "apple".to_string(),
+            context_window: apple_context,
+            context_window_measured: apple_measured,
+        },
+        ModelObject {
+            id: "apple-content-tagging".to_string(),
+            object: "model".to_string(),
+            created: 1718000000,
+            owned_by: "apple".to_string(),
+            context_window: apple_context,
+            context_window_measured: apple_measured,
+        },
+        ModelObject {
+            id: "gpt-4o-mini".to_string(), // alias for compatibility
+            object: "model".to_string(),
+            created: 1718000000,
+            owned_by: "apple".to_string(),
+            context_window: apple_context,
+            context_window_measured: apple_measured,
+        },
+        ModelObject {
+            id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit".to_string(),
+            object: "model".to_string(),
+            created: 1718000000,
+            owned_by: "mlx-community".to_string(),
+            context_window: mlx_context,
+            context_window_measured: mlx_measured,
+        },
+    ];
+
+    if let Some(adapter_path) = state.engine.adapter_path() {
+        let adapter_stem = std::path::Path::new(adapter_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("custom-adapter");
+        let adapter_id = format!("{}:adapter-{}", state.engine.model_name(), adapter_stem);
+        models.push(ModelObject {
+            id: adapter_id,
+            object: "model".to_string(),
+            created: 1718000000,
+            owned_by: "user-adapter".to_string(),
+            context_window: engine_context,
+            context_window_measured: engine_measured,
+        });
+    }
+
     let resp = ModelList {
         object: "list".to_string(),
-        data: vec![
-            ModelObject {
-                id: "apple-foundationmodel".to_string(),
-                object: "model".to_string(),
-                created: 1718000000,
-                owned_by: "apple".to_string(),
-            },
-            ModelObject {
-                id: "gpt-4o-mini".to_string(), // alias for compatibility
-                object: "model".to_string(),
-                created: 1718000000,
-                owned_by: "apple".to_string(),
-            },
-            ModelObject {
-                id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit".to_string(),
-                object: "model".to_string(),
-                created: 1718000000,
-                owned_by: "mlx-community".to_string(),
-            },
-        ],
+        data: models,
     };
     Json(resp)
 }
@@ -145,6 +194,14 @@ pub(crate) async fn chat_completions_handler(
             .collect::<Vec<_>>()
             .join("\n\n");
 
+        let use_case = if req.model.to_lowercase().contains("tag")
+            || req.model.to_lowercase().contains("classif")
+        {
+            Some("content_tagging".to_string())
+        } else {
+            None
+        };
+
         let gen_req = GenerateRequest {
             prompt: last_prompt,
             system_prompt: if system_prompt.is_empty() {
@@ -158,6 +215,7 @@ pub(crate) async fn chat_completions_handler(
             max_tokens: effective_max_tokens,
             permissive: false,
             seed: req.seed,
+            use_case,
         };
 
         let mut rx = match state.engine.stream_generate(&gen_req) {
@@ -290,8 +348,16 @@ pub(crate) async fn chat_completions_handler(
             _ => req.tools.as_deref(),
         };
 
+        let use_case = if req.model.to_lowercase().contains("tag")
+            || req.model.to_lowercase().contains("classif")
+        {
+            Some("content_tagging".to_string())
+        } else {
+            None
+        };
+
         let result = match session_mgr
-            .process_messages(
+            .process_messages_with_use_case(
                 &req.messages,
                 effective_tools,
                 &config,
@@ -299,6 +365,7 @@ pub(crate) async fn chat_completions_handler(
                 req.top_p,
                 effective_max_tokens,
                 req.seed,
+                use_case,
             )
             .await
         {
@@ -468,6 +535,54 @@ pub(crate) async fn responses_handler(
     Json(resp).into_response()
 }
 
+// MARK: - Responses Input Tokens Endpoint (/v1/responses/input_tokens)
+
+pub(crate) async fn responses_input_tokens_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ResponsesRequest>,
+) -> Response {
+    let mut total_tokens = 0;
+
+    if let Some(instructions) = &req.instructions {
+        if !instructions.is_empty() {
+            total_tokens += state.engine.count_tokens(instructions);
+        }
+    }
+
+    match &req.input {
+        Some(ResponsesInput::Text(t)) => {
+            if !t.is_empty() {
+                total_tokens += state.engine.count_tokens(t);
+            }
+        }
+        Some(ResponsesInput::Items(items)) => {
+            for item in items {
+                let text = match &item.content {
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(v) => serde_json::to_string(v).unwrap_or_default(),
+                    None => String::new(),
+                };
+                if !text.is_empty() {
+                    total_tokens += state.engine.count_tokens(&text);
+                }
+            }
+        }
+        None => {}
+    }
+
+    if let Some(tools) = &req.tools {
+        for tool in tools {
+            let tool_str = serde_json::to_string(tool).unwrap_or_default();
+            if !tool_str.is_empty() {
+                total_tokens += state.engine.count_tokens(&tool_str);
+            }
+        }
+    }
+
+    let resp = ResponsesInputTokensResponse::new(total_tokens);
+    Json(resp).into_response()
+}
+
 // ============================================================================
 // Embedding & Ollama Handlers (Phases 2 & 3)
 // ============================================================================
@@ -561,6 +676,7 @@ pub(crate) async fn ollama_chat_handler(
         max_tokens: Some(512),
         permissive: true,
         seed: None,
+        use_case: None,
     };
     match state.engine.generate(&gen_req) {
         Ok(res) => Json(serde_json::json!({
@@ -589,6 +705,7 @@ pub(crate) async fn ollama_generate_handler(
         max_tokens: Some(512),
         permissive: true,
         seed: None,
+        use_case: None,
     };
     match state.engine.generate(&gen_req) {
         Ok(res) => Json(serde_json::json!({

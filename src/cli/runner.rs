@@ -3,7 +3,6 @@
 // Part of apfel-rs
 // ============================================================================
 
-use crate::backend::create_engine;
 use crate::backend::engine::{BackendEngine, GenerateRequest, StreamChunk};
 use crate::cli::args::CliArgs;
 use crate::cli::chat::run_chat_loop;
@@ -23,7 +22,11 @@ use std::time::Instant;
 
 /// Executes the apfel CLI with the configured backend engine.
 pub async fn run_cli(args: CliArgs) -> i32 {
-    let engine = create_engine(args.engine.as_deref(), args.model.as_deref());
+    let engine = crate::backend::create_engine_with_adapter(
+        args.engine.as_deref(),
+        args.model.as_deref(),
+        args.adapter.as_deref(),
+    );
     run_cli_with_engine(args, engine).await
 }
 
@@ -31,6 +34,18 @@ pub async fn run_cli(args: CliArgs) -> i32 {
 pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     if args.no_color {
         colored::control::set_override(false);
+    }
+
+    // Validation: --adapter path must exist if specified
+    if let Some(path) = &args.adapter {
+        if !std::path::Path::new(path).exists() {
+            eprintln!(
+                "{}: adapter path not found: {}",
+                "Usage error".red().bold(),
+                path
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
     }
 
     // Validation: --code conflict checks
@@ -56,6 +71,13 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
             );
             return ApfelExitCodes::USAGE_ERROR;
         }
+        if args.batch {
+            eprintln!(
+                "{}: --code cannot be used with --batch",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
         if args.schema.is_some() {
             eprintln!(
                 "{}: --code cannot be used with --schema",
@@ -74,13 +96,131 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
 
     // Validation: --require-complete conflict checks
     if args.require_complete
-        && (args.serve || args.model_info || args.count_tokens || args.benchmark || args.chat)
+        && (args.serve
+            || args.model_info
+            || args.count_tokens
+            || args.benchmark
+            || args.chat
+            || args.batch)
     {
         eprintln!(
             "{}: --require-complete is only supported for prompt generation",
             "Usage error".red().bold()
         );
         return ApfelExitCodes::USAGE_ERROR;
+    }
+
+    // Validation: --batch conflict checks
+    if args.batch {
+        if args.stream {
+            eprintln!(
+                "{}: --batch cannot be used with --stream",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.chat {
+            eprintln!(
+                "{}: --batch cannot be used with --chat",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.serve {
+            eprintln!(
+                "{}: --batch cannot be used with --serve",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.count_tokens || args.model_info || args.benchmark {
+            eprintln!(
+                "{}: --batch cannot be used with non-generating modes",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+    }
+
+    // Environmental fallback handling for non-generating / daemon modes (#496)
+    if args.serve || args.model_info || args.benchmark {
+        let mode_name = if args.serve {
+            "--serve"
+        } else if args.model_info {
+            "--model-info"
+        } else {
+            "--benchmark"
+        };
+
+        if args.was_flag_explicit("-t", "--temperature") {
+            eprintln!(
+                "{}: --temperature cannot be used with {}",
+                "Usage error".red().bold(),
+                mode_name
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        } else if args.temperature.is_some() && args.serve {
+            eprintln!(
+                "info: APFEL_TEMPERATURE set in environment is ignored in {} mode",
+                mode_name
+            );
+        }
+
+        if args.was_flag_explicit("", "--top-p") {
+            eprintln!(
+                "{}: --top-p cannot be used with {}",
+                "Usage error".red().bold(),
+                mode_name
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        } else if args.top_p.is_some() && args.serve {
+            eprintln!(
+                "info: APFEL_TOP_P set in environment is ignored in {} mode",
+                mode_name
+            );
+        }
+
+        if args.was_flag_explicit("", "--max-tokens") {
+            eprintln!(
+                "{}: --max-tokens cannot be used with {}",
+                "Usage error".red().bold(),
+                mode_name
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        } else if args.max_tokens.is_some() && args.serve {
+            eprintln!(
+                "info: APFEL_MAX_TOKENS set in environment is ignored in {} mode",
+                mode_name
+            );
+        }
+
+        if args.was_flag_explicit("", "--seed") {
+            eprintln!(
+                "{}: --seed cannot be used with {}",
+                "Usage error".red().bold(),
+                mode_name
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        } else if args.seed.is_some() && args.serve {
+            eprintln!(
+                "info: APFEL_SEED set in environment is ignored in {} mode",
+                mode_name
+            );
+        }
+
+        if args.was_flag_explicit("-s", "--system") {
+            eprintln!(
+                "{}: --system cannot be used with {}",
+                "Usage error".red().bold(),
+                mode_name
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        } else if args.system.is_some() && args.serve {
+            eprintln!(
+                "info: APFEL_SYSTEM_PROMPT set in environment is ignored in {} mode",
+                mode_name
+            );
+        }
     }
 
     // Validation: stop sequences
@@ -97,6 +237,11 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
     // 0. Completions Generator
     if let Some(shell_name) = &args.completions {
         return run_completions(shell_name);
+    }
+
+    // 0.5 Batch Processing Mode
+    if args.batch {
+        return crate::cli::batch::run_batch_mode(args, engine).await;
     }
 
     // 1. Model Info Mode
@@ -162,12 +307,20 @@ fn run_model_info(engine: &dyn BackendEngine) -> i32 {
     let available = if engine.is_available() { "yes" } else { "no" };
     let languages = engine.supported_languages().join(", ");
     let context = engine.context_size();
+    let measured_str = if engine.context_window_measured() {
+        "(measured)"
+    } else {
+        "(assumed - model cold start)"
+    };
 
     println!("apfel v{} — model info", env!("CARGO_PKG_VERSION"));
     println!("├ model:      {}", engine.model_name());
     println!("├ on-device:  true (always)");
     println!("├ available:  {}", available);
-    println!("├ context:    {} tokens", context);
+    println!("├ context:    {} tokens {}", context, measured_str);
+    if let Some(adapter) = engine.adapter_path() {
+        println!("├ adapter:    {}", adapter);
+    }
     println!("├ languages:  {}", languages);
     println!("└ framework:  {}", engine.framework_name());
 
@@ -240,6 +393,7 @@ async fn run_benchmark(engine: &dyn BackendEngine) -> i32 {
         max_tokens: Some(512),
         permissive: false,
         seed: None,
+        use_case: None,
     };
 
     let start = Instant::now();
@@ -466,6 +620,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         max_tokens: args.max_tokens,
         permissive: args.permissive,
         seed: args.seed,
+        use_case: None,
     };
 
     if should_stream && mcp_manager.is_none() {

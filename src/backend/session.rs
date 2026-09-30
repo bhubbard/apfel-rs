@@ -44,6 +44,30 @@ impl SessionManager {
         max_tokens: Option<usize>,
         seed: Option<u64>,
     ) -> Result<SessionResult, ApfelError> {
+        self.process_messages_with_use_case(
+            messages,
+            tools,
+            config,
+            temperature,
+            top_p,
+            max_tokens,
+            seed,
+            None,
+        )
+        .await
+    }
+
+    pub async fn process_messages_with_use_case(
+        &self,
+        messages: &[OpenAIMessage],
+        tools: Option<&[OpenAITool]>,
+        config: &ContextConfig,
+        temperature: Option<f64>,
+        top_p: Option<f64>,
+        max_tokens: Option<usize>,
+        seed: Option<u64>,
+        use_case: Option<String>,
+    ) -> Result<SessionResult, ApfelError> {
         let budget = self
             .engine
             .context_size()
@@ -115,6 +139,7 @@ impl SessionManager {
                 max_tokens,
                 permissive: config.permissive,
                 seed,
+                use_case: use_case.clone(),
             };
 
             let resp = self.engine.generate(&gen_req)?;

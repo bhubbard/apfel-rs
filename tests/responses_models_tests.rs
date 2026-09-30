@@ -85,3 +85,47 @@ fn test_response_object_serialization() {
     assert!(serialized.contains(r#""status":"completed""#));
     assert!(serialized.contains(r#""total_tokens":11"#));
 }
+
+#[test]
+fn test_decode_input_tokens_preflight_request() {
+    let json = r#"{
+        "model": "apple-foundationmodel",
+        "instructions": "Be accurate",
+        "input": "Calculate 42 * 2",
+        "tools": [
+            {
+                "type": "function",
+                "name": "calculator",
+                "description": "Evaluate math expression",
+                "parameters": {"type": "object"}
+            }
+        ]
+    }"#;
+
+    let req: ResponsesRequest = serde_json::from_str(json).unwrap();
+    assert_eq!(req.instructions, Some("Be accurate".into()));
+    match req.input {
+        Some(ResponsesInput::Text(t)) => assert_eq!(t, "Calculate 42 * 2"),
+        _ => panic!("Expected text input"),
+    }
+    let tools = req.tools.expect("Expected tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "calculator");
+    assert_eq!(tools[0].tool_type, "function");
+}
+
+#[test]
+fn test_input_tokens_response_serialization() {
+    use apfel::core::responses_models::ResponsesInputTokensResponse;
+
+    let resp = ResponsesInputTokensResponse::new(42);
+    let serialized = serde_json::to_string(&resp).unwrap();
+    assert_eq!(
+        serialized,
+        r#"{"object":"response.input_tokens","input_tokens":42}"#
+    );
+
+    let deserialized: ResponsesInputTokensResponse = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.object, "response.input_tokens");
+    assert_eq!(deserialized.input_tokens, 42);
+}

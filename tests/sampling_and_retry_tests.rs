@@ -48,11 +48,13 @@ fn test_sampling_options_in_generate_request() {
         max_tokens: Some(100),
         permissive: false,
         seed: None,
+        use_case: None,
     };
     assert_eq!(req_greedy.temperature, Some(0.0));
     assert_eq!(req_greedy.top_p, None);
+    assert_eq!(req_greedy.use_case, None);
 
-    // Nucleus sampling with seed
+    // Nucleus sampling with seed and content tagging
     let req_nucleus = GenerateRequest {
         prompt: "test".into(),
         system_prompt: None,
@@ -62,8 +64,10 @@ fn test_sampling_options_in_generate_request() {
         max_tokens: Some(250),
         permissive: true,
         seed: Some(1337),
+        use_case: Some("content_tagging".into()),
     };
     assert_eq!(req_nucleus.top_p, Some(0.9));
     assert_eq!(req_nucleus.seed, Some(1337));
+    assert_eq!(req_nucleus.use_case.as_deref(), Some("content_tagging"));
     assert!(req_nucleus.permissive);
 }

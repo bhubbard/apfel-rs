@@ -38,26 +38,65 @@ pub fn create_engine(
     engine_name: Option<&str>,
     model_name: Option<&str>,
 ) -> std::sync::Arc<dyn BackendEngine> {
+    create_engine_with_adapter(engine_name, model_name, None)
+}
+
+/// Creates a backend engine by name and optional fine-tuned adapter path.
+pub fn create_engine_with_adapter(
+    engine_name: Option<&str>,
+    model_name: Option<&str>,
+    adapter_path: Option<&str>,
+) -> std::sync::Arc<dyn BackendEngine> {
     match engine_name {
         Some("mlx") => {
-            let engine = if let Some(m) = model_name {
+            let mut engine = if let Some(m) = model_name {
                 MlxBackendEngine::new(m)
             } else {
                 MlxBackendEngine::default()
             };
+            if let Some(ad) = adapter_path {
+                engine = engine.with_adapter(ad);
+            }
             std::sync::Arc::new(engine)
         }
-        Some("mock") => std::sync::Arc::new(MockEngine::new()),
-        Some("foundation") | Some("apple") => {
-            #[cfg(has_foundation_models)]
-            {
-                std::sync::Arc::new(FoundationModelsEngine::new())
-            }
-            #[cfg(not(has_foundation_models))]
-            {
+        Some("mock") => {
+            if let Some(ad) = adapter_path {
+                std::sync::Arc::new(MockEngine::with_adapter(ad))
+            } else {
                 std::sync::Arc::new(MockEngine::new())
             }
         }
-        _ => default_engine(),
+        Some("foundation") | Some("apple") => {
+            #[cfg(has_foundation_models)]
+            {
+                if let Some(ad) = adapter_path {
+                    std::sync::Arc::new(FoundationModelsEngine::with_adapter(ad))
+                } else {
+                    std::sync::Arc::new(FoundationModelsEngine::new())
+                }
+            }
+            #[cfg(not(has_foundation_models))]
+            {
+                if let Some(ad) = adapter_path {
+                    std::sync::Arc::new(MockEngine::with_adapter(ad))
+                } else {
+                    std::sync::Arc::new(MockEngine::new())
+                }
+            }
+        }
+        _ => {
+            if let Some(ad) = adapter_path {
+                #[cfg(has_foundation_models)]
+                {
+                    std::sync::Arc::new(FoundationModelsEngine::with_adapter(ad))
+                }
+                #[cfg(not(has_foundation_models))]
+                {
+                    std::sync::Arc::new(MockEngine::with_adapter(ad))
+                }
+            } else {
+                default_engine()
+            }
+        }
     }
 }

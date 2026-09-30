@@ -199,6 +199,7 @@ pub async fn run_chat_loop(
                     max_tokens: None,
                     permissive,
                     seed: None,
+                    use_case: None,
                 };
 
                 let mut rx = match engine.stream_generate(&gen_req) {

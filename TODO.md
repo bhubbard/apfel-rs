@@ -4,47 +4,37 @@ This document tracks upcoming features, upstream parity items, protocol addition
 
 ---
 
-## 🚀 High-Priority Backlog
+## 🚀 Completed Upstream Parity & UNIX Enhancements
 
 ### 1. High-Performance JSONL `--batch` Mode
 - **Upstream Reference**: [Arthur-Ficial/apfel #481](https://github.com/Arthur-Ficial/apfel/issues/481)
-- **Status**: Planned (Phase 2)
-- **Scope**:
-  - Read incremental UTF-8 JSONL records from `stdin` (`jq | apfel --batch | jq`).
-  - Input record format: `{ "custom_id": "...", "prompt": "..." }` or `{ "custom_id": "...", "messages": [...] }`.
-  - Process each record in a fresh, isolated session with bounded read-ahead (avoiding memory accumulation).
-  - Emit one JSON line per record immediately:
-    ```json
-    {"line": 1, "custom_id": "ticket-101", "status": "ok", "content": "billing", "finish_reason": "stop"}
-    ```
-  - Yield exit code `0` on full success, exit code `1` if any record-level generation failed.
-  - Zero process spawning overhead over thousands of records.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - Incremental UTF-8 JSONL stream processing from `stdin` (`jq | apfel --batch | jq`).
+  - Supports input formats `{ "custom_id": "...", "prompt": "..." }` and `{ "custom_id": "...", "messages": [...] }`.
+  - Fresh session isolation per line with zero process-spawn overhead.
+  - Emits real-time JSONL results with line numbers, `custom_id`, `status: "ok" | "error"`, and `content`.
+  - Exits code `0` on total success, code `1` if any record encounters a generation error.
 
 ---
 
 ### 2. OpenAI SDK Token Preflight: `POST /v1/responses/input_tokens`
 - **Upstream Reference**: [Arthur-Ficial/apfel #485](https://github.com/Arthur-Ficial/apfel/issues/485)
-- **Status**: Planned (Phase 3)
-- **Scope**:
-  - Add `/v1/responses/input_tokens` route to the Axum HTTP server.
-  - Decode standard OpenAI request payloads (`model`, `input` text or messages, `instructions`, tools/functions).
-  - Return authoritative token preflight:
-    ```json
-    {
-      "object": "response.input_tokens",
-      "input_tokens": 142
-    }
-    ```
-  - Zero generation and zero MCP tool invocation. Allows clients using `client.responses.input_tokens.count(...)` to budget context accurately.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - Registered `POST /v1/responses/input_tokens` endpoint.
+  - Decodes standard OpenAI request payloads (`model`, `input` as string or message array, `instructions`, `tools`).
+  - Returns `{ "object": "response.input_tokens", "input_tokens": N }`.
+  - Zero text generation and zero tool execution overhead.
 
 ---
 
 ### 3. Dynamic Context Window Measurement Disclosure
 - **Upstream Reference**: [Arthur-Ficial/apfel #491](https://github.com/Arthur-Ficial/apfel/issues/491)
-- **Status**: Planned (Phase 3)
-- **Scope**:
-  - Add `context_window_measured: bool` to `/health` and `/v1/models` wire payloads.
-  - In `--model-info`, explicitly annotate whether the context size (e.g. 4096 vs 8192) was measured live from Apple Intelligence or is a fallback floor during cold-start:
+- **Status**: Completed
+- **Scope & Implementation**:
+  - Added `context_window_measured: bool` to `/health` and `/v1/models` wire payloads.
+  - In `--model-info`, clearly discloses whether the window is measured live or assumed:
     ```text
     Context Window : 4,096 tokens (assumed - model cold start)
     # or
@@ -55,43 +45,55 @@ This document tracks upcoming features, upstream parity items, protocol addition
 
 ### 4. Graceful Shell Environment Variable Fallbacks for `--serve`
 - **Upstream Reference**: [Arthur-Ficial/apfel #496](https://github.com/Arthur-Ficial/apfel/issues/496)
-- **Status**: Planned (Phase 3)
-- **Scope**:
-  - Track argument provenance (explicit CLI flag vs. `APFEL_*` environment variable).
-  - If standing prompt variables like `APFEL_TEMPERATURE` or `APFEL_SYSTEM_PROMPT` are exported in the user's shell, do not reject `apfel --serve`, `--benchmark`, or `--model-info` with exit code 2.
-  - Emit an informational warning and start cleanly. Hard CLI flag conflicts retain exit code 2.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - Tracks argument provenance (explicit CLI flag vs. `APFEL_*` environment variable).
+  - Standing shell exports (`APFEL_TEMPERATURE`, `APFEL_SYSTEM_PROMPT`, etc.) no longer fail `--serve`, `--model-info`, or `--benchmark`.
+  - Explicit command-line flag conflicts retain exit code `2` (`USAGE_ERROR`).
 
 ---
 
 ### 5. Multi-Turn Tool Call Exchange Preservation
 - **Upstream Reference**: [Arthur-Ficial/apfel #482](https://github.com/Arthur-Ficial/apfel/issues/482)
-- **Status**: Backlog
-- **Scope**:
-  - When applying context trimming strategies (`sliding-window`, `newest-first`), ensure an assistant's tool-call message and its corresponding tool result are treated as an atomic unit.
-  - Prevent splitting a tool request from its output, which causes OpenAI API validation errors.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - `ContextManager::group_conversation` groups assistant `tool_calls` messages and corresponding `role: "tool"` responses into atomic units.
+  - Prevents splitting a tool request from its response during sliding-window, newest-first, and oldest-first truncation.
+  - Drops orphaned tool messages so OpenAI client schema validation never fails.
 
 ---
 
-### 6. Local JSON Schema References (`$defs` / `$ref`)
+### 6. Local JSON Schema References (`$defs` / `#/definitions`)
 - **Upstream Reference**: [Arthur-Ficial/apfel #479](https://github.com/Arthur-Ficial/apfel/issues/479)
-- **Status**: Backlog
-- **Scope**:
-  - Resolve in-document `#/$defs/Type` references when generating schema instructions and validating structured JSON outputs.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - In `SchemaParser`, resolves RFC 6901 JSON pointer references (`#/$defs/<Type>` and `#/definitions/<Type>`).
+  - Supports chained references, preserves description overrides and nullability.
+  - Enforces `MAX_SCHEMA_DEPTH = 64` to prevent infinite loops from circular schema references.
 
 ---
 
 ### 7. Fine-Tuned Model Adapters (`--adapter <path>`)
 - **Upstream Reference**: [Arthur-Ficial/apfel #362](https://github.com/Arthur-Ficial/apfel/issues/362)
-- **Status**: Research / Experimental
-- **Scope**:
-  - Add `--adapter <path>` to load `.fmadapter` packages for FoundationModels or LoRA adapters for the MLX engine.
-  - Expose loaded adapters under `/v1/models` with unique model IDs for dynamic routing.
+- **Status**: Completed
+- **Scope & Implementation**:
+  - Added `--adapter <path>` flag and `APFEL_ADAPTER` environment variable.
+  - Validates adapter path existence on disk (exit 2 if missing).
+  - Dynamically registers the adapter model in `/v1/models` (`<base_model>:adapter-<name>`) with `owned_by: "user-adapter"`.
+  - Annotated in `--model-info` output.
 
 ---
 
-## 🛠️ In-Flight Work
+## 🛠️ Summary of Completed Core Features
 - [x] Swift bridge latency optimization (DispatchSemaphore + QoS)
 - [x] Multi-engine benchmark documentation and GitHub Pages update
-- [ ] `--code` code-block extraction flag with exit code 7 (Issue #373)
-- [ ] `--require-complete` completion requirement with exit code 8 (Issue #484)
-- [ ] Repeatable `--stop` CLI flag with stream-level matching (Issue #483)
+- [x] `--code` code-block extraction flag with exit code 7 (Issue #373)
+- [x] `--require-complete` completion requirement with exit code 8 (Issue #484)
+- [x] Repeatable `--stop` CLI flag with stream-level matching (Issue #483)
+- [x] High-performance JSONL `--batch` streaming with session isolation (Issue #481)
+- [x] OpenAI SDK token preflight endpoint `POST /v1/responses/input_tokens` (Issue #485)
+- [x] `context_window_measured` indicator in `/health`, `/v1/models`, and `--model-info` (Issue #491)
+- [x] Graceful shell environment variable fallback handling for `--serve` (Issue #496)
+- [x] Multi-turn tool call atomic preservation during context trimming (Issue #482)
+- [x] Local JSON Schema `$defs` and `#/definitions` reference resolution (Issue #479)
+- [x] Fine-tuned model adapters (`--adapter <path>`) CLI flag and routing (Issue #362)

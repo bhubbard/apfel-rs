@@ -25,6 +25,24 @@ pub struct GenerateRequest {
     pub permissive: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_case: Option<String>,
+}
+
+impl Default for GenerateRequest {
+    fn default() -> Self {
+        Self {
+            prompt: String::new(),
+            system_prompt: None,
+            messages: None,
+            temperature: None,
+            top_p: None,
+            max_tokens: None,
+            permissive: false,
+            seed: None,
+            use_case: None,
+        }
+    }
 }
 
 /// Completed response from a text generation request.
@@ -46,6 +64,9 @@ pub enum StreamChunk {
 pub trait BackendEngine: std::fmt::Debug + Send + Sync {
     fn is_available(&self) -> bool;
     fn context_size(&self) -> usize;
+    fn context_window_measured(&self) -> bool {
+        true
+    }
     fn count_tokens(&self, text: &str) -> usize;
     fn supported_languages(&self) -> Vec<String>;
 
@@ -55,6 +76,10 @@ pub trait BackendEngine: std::fmt::Debug + Send + Sync {
 
     fn framework_name(&self) -> &str {
         "FoundationModels (macOS 26+)"
+    }
+
+    fn adapter_path(&self) -> Option<&str> {
+        None
     }
 
     fn generate(&self, req: &GenerateRequest) -> Result<GenerateResponse, ApfelError>;

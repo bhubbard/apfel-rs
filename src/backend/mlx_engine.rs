@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 pub struct MlxBackendEngine {
     model_name: String,
     context_limit: usize,
+    pub adapter_path: Option<String>,
 }
 
 impl MlxBackendEngine {
@@ -19,11 +20,17 @@ impl MlxBackendEngine {
         Self {
             model_name: model_name.into(),
             context_limit: 8192,
+            adapter_path: None,
         }
     }
 
     pub fn with_context_size(mut self, limit: usize) -> Self {
         self.context_limit = limit;
+        self
+    }
+
+    pub fn with_adapter(mut self, adapter: impl Into<String>) -> Self {
+        self.adapter_path = Some(adapter.into());
         self
     }
 }
@@ -42,6 +49,10 @@ impl BackendEngine for MlxBackendEngine {
 
     fn context_size(&self) -> usize {
         self.context_limit
+    }
+
+    fn adapter_path(&self) -> Option<&str> {
+        self.adapter_path.as_deref()
     }
 
     fn count_tokens(&self, text: &str) -> usize {
@@ -174,6 +185,7 @@ mod tests {
             max_tokens: None,
             seed: None,
             permissive: false,
+            use_case: None,
         };
         let res = engine.generate(&req).unwrap();
         assert_eq!(res.content, "4");
@@ -192,6 +204,7 @@ mod tests {
             max_tokens: None,
             seed: None,
             permissive: false,
+            use_case: None,
         };
         let mut rx = engine.stream_generate(&req).unwrap();
         let mut received = Vec::new();

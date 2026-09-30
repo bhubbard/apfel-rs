@@ -54,6 +54,7 @@ pub struct ResponsesInputItem {
 pub struct ResponsesTool {
     #[serde(rename = "type")]
     pub tool_type: String,
+    #[serde(default)]
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -95,4 +96,20 @@ pub struct ResponsesUsage {
     pub input_tokens: usize,
     pub output_tokens: usize,
     pub total_tokens: usize,
+}
+
+/// Response payload for token preflight (/v1/responses/input_tokens).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResponsesInputTokensResponse {
+    pub object: String,
+    pub input_tokens: usize,
+}
+
+impl ResponsesInputTokensResponse {
+    pub fn new(input_tokens: usize) -> Self {
+        Self {
+            object: "response.input_tokens".to_string(),
+            input_tokens,
+        }
+    }
 }
