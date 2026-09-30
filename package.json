@@ -1,6 +1,6 @@
 {
   "name": "apfel-rs",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "High-performance Rust fork of apfel: Apple Intelligence on-device model from the command line and OpenAI-compatible server",
   "main": "bin/apfel.js",
   "bin": {
