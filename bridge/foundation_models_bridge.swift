@@ -162,91 +162,82 @@ public func apfel_bridge_generate_json(
         return 2
     }
     
-    var completed = false
     var exitCode: Int32 = 0
+    let semaphore = DispatchSemaphore(value: 0)
     
-    let thread = Thread {
-        let runLoop = RunLoop.current
-        Task {
-            do {
-                let permissive = req.permissive ?? false
-                let model = permissive ? permissiveModel : defaultModel
-                
-                let session: LanguageModelSession
-                if !transcriptEntries.isEmpty {
-                    session = LanguageModelSession(model: model, transcript: Transcript(entries: transcriptEntries))
-                } else {
-                    session = LanguageModelSession(model: model)
-                }
-                
-                // Generation options
-                var options = GenerationOptions()
-                options.temperature = req.temperature
-                if let maxTokens = req.max_tokens {
-                    options.maximumResponseTokens = maxTokens
-                }
-                if let topP = req.top_p {
-                    options.sampling = .random(probabilityThreshold: topP, seed: req.seed)
-                } else if req.temperature == 0.0 {
-                    options.sampling = .greedy
-                }
-                
-                let stream = session.streamResponse(to: finalPrompt, options: options)
-                var prevUtf8ByteCount = 0
-                for try await snapshot in stream {
-                    let content = snapshot.content
-                    let utf8 = content.utf8
-                    let currentByteCount = utf8.count
-                    if currentByteCount > prevUtf8ByteCount {
-                        let start = utf8.index(utf8.startIndex, offsetBy: prevUtf8ByteCount)
-                        if let strIndex = start.samePosition(in: content) {
-                            let delta = String(content[strIndex...])
-                            delta.withCString { cStr in
-                                callback(cStr, false, nil, nil, userData)
-                            }
-                            prevUtf8ByteCount = currentByteCount
-                        }
-                    }
-                }
-                
-                let finishReason = (req.max_tokens != nil && prevUtf8ByteCount >= (req.max_tokens! * 3)) ? "length" : "stop"
-                finishReason.withCString { reason in
-                    callback(nil, true, reason, nil, userData)
-                }
-                exitCode = 0
-            } catch {
-                let errString = "\(error)"
-                let reason: String
-                let code: Int32
-                if errString.lowercased().contains("guardrail") || errString.lowercased().contains("safety") {
-                    reason = "guardrail"
-                    code = 3
-                } else if errString.lowercased().contains("context") || errString.lowercased().contains("token") {
-                    reason = "context_overflow"
-                    code = 4
-                } else {
-                    reason = "error"
-                    code = 1
-                }
-                errString.withCString { err in
-                    reason.withCString { r in
-                        callback(nil, true, r, err, userData)
-                    }
-                }
-                exitCode = code
+    Task {
+        defer {
+            semaphore.signal()
+        }
+        do {
+            let permissive = req.permissive ?? false
+            let model = permissive ? permissiveModel : defaultModel
+            
+            let session: LanguageModelSession
+            if !transcriptEntries.isEmpty {
+                session = LanguageModelSession(model: model, transcript: Transcript(entries: transcriptEntries))
+            } else {
+                session = LanguageModelSession(model: model)
             }
-            completed = true
-        }
-        
-        while !completed {
-            runLoop.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
+            
+            // Generation options
+            var options = GenerationOptions()
+            options.temperature = req.temperature
+            if let maxTokens = req.max_tokens {
+                options.maximumResponseTokens = maxTokens
+            }
+            if let topP = req.top_p {
+                options.sampling = .random(probabilityThreshold: topP, seed: req.seed)
+            } else if req.temperature == 0.0 {
+                options.sampling = .greedy
+            }
+            
+            let stream = session.streamResponse(to: finalPrompt, options: options)
+            var prevUtf8ByteCount = 0
+            for try await snapshot in stream {
+                let content = snapshot.content
+                let utf8 = content.utf8
+                let currentByteCount = utf8.count
+                if currentByteCount > prevUtf8ByteCount {
+                    let start = utf8.index(utf8.startIndex, offsetBy: prevUtf8ByteCount)
+                    if let strIndex = start.samePosition(in: content) {
+                        let delta = String(content[strIndex...])
+                        delta.withCString { cStr in
+                            callback(cStr, false, nil, nil, userData)
+                        }
+                        prevUtf8ByteCount = currentByteCount
+                    }
+                }
+            }
+            
+            let finishReason = (req.max_tokens != nil && prevUtf8ByteCount >= (req.max_tokens! * 3)) ? "length" : "stop"
+            finishReason.withCString { reason in
+                callback(nil, true, reason, nil, userData)
+            }
+            exitCode = 0
+        } catch {
+            let errString = "\(error)"
+            let reason: String
+            let code: Int32
+            if errString.lowercased().contains("guardrail") || errString.lowercased().contains("safety") {
+                reason = "guardrail"
+                code = 3
+            } else if errString.lowercased().contains("context") || errString.lowercased().contains("token") {
+                reason = "context_overflow"
+                code = 4
+            } else {
+                reason = "error"
+                code = 1
+            }
+            errString.withCString { err in
+                reason.withCString { r in
+                    callback(nil, true, r, err, userData)
+                }
+            }
+            exitCode = code
         }
     }
     
-    thread.start()
-    while !completed {
-        Thread.sleep(forTimeInterval: 0.01)
-    }
-    
+    semaphore.wait()
     return exitCode
 }

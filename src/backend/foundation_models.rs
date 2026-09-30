@@ -213,6 +213,11 @@ impl BackendEngine for FoundationModelsEngine {
         let (std_tx, std_rx) = std_mpsc::channel::<StreamChunk>();
 
         std::thread::spawn(move || {
+            // Elevate thread QoS so macOS schedules this on P-cores (performance cores)
+            // SAFETY: pthread_set_qos_class_self_np is safe to call on the current thread.
+            unsafe {
+                libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
+            }
             let tx_ptr = &std_tx as *const std_mpsc::Sender<StreamChunk> as *mut c_void;
             // SAFETY: Calling `apfel_bridge_generate_json` from the Swift bridge static library linked at build time.
             // `c_json` is a valid null-terminated C string whose pointer remains valid for the duration of the call.
