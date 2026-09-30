@@ -149,8 +149,14 @@ cat logs.txt | apfel "Summarize any errors found"
 # Attach files
 apfel -f src/lib.rs "Explain the public interface"
 
-# Extract only code block (--code)
-apfel --code "Write a Python script to fetch JSON from an API"
+# Extract only code block without markdown fences (exits 7 if no code found)
+apfel --code "Write a Python script to fetch JSON from an API" > fetch.py
+
+# Require complete response; exit code 8 if truncated by length or context budget
+apfel --require-complete --max-tokens 500 "Generate database schema"
+
+# Stop generation at custom delimiters
+apfel --stop "\nObservation:" "Run ReAct agent action"
 
 # Select backend engine: Apple Intelligence (default) or MLX Neural Engine
 apfel --engine mlx --model "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit" "Explain zero-copy memory in Rust"

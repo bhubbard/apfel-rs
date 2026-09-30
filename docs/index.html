@@ -1437,8 +1437,18 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
               </tr>
               <tr>
                 <td><code>--code</code></td>
-                <td>Extract only the first markdown code block</td>
+                <td>Extract pure code block, stripping fences and prose (exits 7 if no code)</td>
                 <td><code>apfel --code "Write a Python script to parse JSON"</code></td>
+              </tr>
+              <tr>
+                <td><code>--require-complete</code></td>
+                <td>Require complete response; exit code 8 if truncated by budget or length</td>
+                <td><code>apfel --require-complete --max-tokens 256 "Generate JSON"</code></td>
+              </tr>
+              <tr>
+                <td><code>--stop &lt;SEQ&gt;</code></td>
+                <td>Stop sequence to truncate generation at custom delimiter (repeatable)</td>
+                <td><code>apfel --stop "\nObservation:" "Agent prompt"</code></td>
               </tr>
               <tr>
                 <td><code>--chat</code></td>

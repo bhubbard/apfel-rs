@@ -91,6 +91,18 @@ pub struct CliArgs {
     #[arg(long = "messages", value_name = "FILE")]
     pub messages: Option<String>,
 
+    /// Extract only code blocks, stripping markdown fences and prose (exits 7 if no code found)
+    #[arg(long = "code")]
+    pub code: bool,
+
+    /// Require complete generation; exit with code 8 if response is truncated by token budget or length
+    #[arg(long = "require-complete")]
+    pub require_complete: bool,
+
+    /// Stop sequences to truncate generation (repeatable)
+    #[arg(long = "stop", value_name = "SEQUENCE")]
+    pub stop: Vec<String>,
+
     /// Sampling temperature
     #[arg(short = 't', long = "temperature")]
     pub temperature: Option<f64>,

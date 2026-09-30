@@ -17,6 +17,7 @@ impl ApfelExitCodes {
     pub const MODEL_UNAVAILABLE: i32 = 5;
     pub const RATE_LIMITED: i32 = 6;
     pub const NO_CODE: i32 = 7;
+    pub const INCOMPLETE_RESPONSE: i32 = 8;
 }
 
 /// Unified error enum representing all domain, HTTP, and runtime errors in apfel.
@@ -46,6 +47,9 @@ pub enum ApfelError {
     #[error("no code block found in response")]
     NoCodeFound,
 
+    #[error("incomplete response: output was truncated")]
+    IncompleteResponse,
+
     #[error("not implemented: {0}")]
     NotImplemented(String),
 
@@ -68,6 +72,7 @@ impl ApfelError {
             Self::ContextOverflow(_) => ApfelExitCodes::CONTEXT_OVERFLOW,
             Self::RateLimited(_) => ApfelExitCodes::RATE_LIMITED,
             Self::NoCodeFound => ApfelExitCodes::NO_CODE,
+            Self::IncompleteResponse => ApfelExitCodes::INCOMPLETE_RESPONSE,
             Self::ToolExecution(_)
             | Self::MCP(_)
             | Self::NotImplemented(_)

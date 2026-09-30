@@ -7,9 +7,11 @@ use crate::backend::create_engine;
 use crate::backend::engine::{BackendEngine, GenerateRequest, StreamChunk};
 use crate::cli::args::CliArgs;
 use crate::cli::chat::run_chat_loop;
+use crate::core::code_cropper::extract_code;
 use crate::core::context::ContextStrategy;
 use crate::core::error::ApfelExitCodes;
 use crate::core::schema::SchemaParser;
+use crate::core::stop_matcher::{StopMatchResult, StopSequenceMatcher};
 use crate::mcp::client::MCPManager;
 use crate::server::run_server;
 use colored::Colorize;
@@ -29,6 +31,67 @@ pub async fn run_cli(args: CliArgs) -> i32 {
 pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     if args.no_color {
         colored::control::set_override(false);
+    }
+
+    // Validation: --code conflict checks
+    if args.code {
+        if args.stream {
+            eprintln!(
+                "{}: --code cannot be used with --stream",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.chat {
+            eprintln!(
+                "{}: --code cannot be used with --chat",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.serve {
+            eprintln!(
+                "{}: --code cannot be used with --serve",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.schema.is_some() {
+            eprintln!(
+                "{}: --code cannot be used with --schema",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        if args.count_tokens || args.model_info || args.benchmark {
+            eprintln!(
+                "{}: --code cannot be used with non-generating modes",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+    }
+
+    // Validation: --require-complete conflict checks
+    if args.require_complete
+        && (args.serve || args.model_info || args.count_tokens || args.benchmark || args.chat)
+    {
+        eprintln!(
+            "{}: --require-complete is only supported for prompt generation",
+            "Usage error".red().bold()
+        );
+        return ApfelExitCodes::USAGE_ERROR;
+    }
+
+    // Validation: stop sequences
+    for s in &args.stop {
+        if s.is_empty() {
+            eprintln!(
+                "{}: stop sequence cannot be empty",
+                "Usage error".red().bold()
+            );
+            return ApfelExitCodes::USAGE_ERROR;
+        }
     }
 
     // 0. Completions Generator
@@ -345,6 +408,15 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
 
     // Validate schema if provided
     let mut system_instructions = args.system.clone().unwrap_or_default();
+    if args.code {
+        if !system_instructions.is_empty() {
+            system_instructions.push_str("\n\n");
+        }
+        system_instructions.push_str(
+            "Output only the requested code. Do not include markdown code fences, backticks, or any conversational prose or explanations.",
+        );
+    }
+
     if let Some(schema_path) = &args.schema {
         match fs::read_to_string(schema_path) {
             Ok(schema_content) => {
@@ -378,7 +450,8 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         None
     };
 
-    let should_stream = (args.stream || io::stdout().is_terminal()) && !args.no_stream;
+    let should_stream =
+        !args.code && (args.stream || io::stdout().is_terminal()) && !args.no_stream;
 
     let req = GenerateRequest {
         prompt: prompt_text,
@@ -404,13 +477,42 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         };
 
+        let mut stop_matcher = match StopSequenceMatcher::new(&args.stop) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                return e.exit_code();
+            }
+        };
+
+        let mut matched_stop = false;
+        let mut final_finish_reason = "stop".to_string();
+
         while let Some(chunk) = rx.recv().await {
             match chunk {
-                StreamChunk::Delta(delta) => {
-                    print!("{}", delta);
-                    let _ = io::stdout().flush();
-                }
-                StreamChunk::Done { .. } => {
+                StreamChunk::Delta(delta) => match stop_matcher.feed(&delta) {
+                    StopMatchResult::Emit(s) => {
+                        print!("{}", s);
+                        let _ = io::stdout().flush();
+                    }
+                    StopMatchResult::Holding => {}
+                    StopMatchResult::Matched { emitted, .. } => {
+                        print!("{}", emitted);
+                        let _ = io::stdout().flush();
+                        matched_stop = true;
+                        final_finish_reason = "stop".to_string();
+                        break;
+                    }
+                },
+                StreamChunk::Done { finish_reason } => {
+                    let flushed = stop_matcher.flush();
+                    if !flushed.is_empty() {
+                        print!("{}", flushed);
+                        let _ = io::stdout().flush();
+                    }
+                    if !matched_stop {
+                        final_finish_reason = finish_reason;
+                    }
                     println!();
                     break;
                 }
@@ -420,6 +522,11 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                 }
             }
         }
+
+        if args.require_complete && final_finish_reason == "length" && !matched_stop {
+            return ApfelExitCodes::INCOMPLETE_RESPONSE;
+        }
+
         ApfelExitCodes::SUCCESS
     } else {
         let session_mgr = crate::backend::session::SessionManager::new(engine.clone(), mcp_manager);
@@ -452,13 +559,31 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         };
 
+        let mut content = res.content;
+        let mut finish_reason = res.finish_reason;
+
+        // Apply stop sequence truncation if requested
+        if !args.stop.is_empty() {
+            let (truncated, matched_seq) = StopSequenceMatcher::truncate_text(&content, &args.stop);
+            if matched_seq.is_some() {
+                finish_reason = "stop".to_string();
+            }
+            content = truncated;
+        }
+
+        // Check require_complete
+        if args.require_complete && finish_reason == "length" {
+            // Suppress stdout for incomplete generation in non-streaming mode
+            return ApfelExitCodes::INCOMPLETE_RESPONSE;
+        }
+
         // Telemetry recording if requested
         if let Some(telemetry_path) = &args.telemetry {
             let record = serde_json::json!({
                 "timestamp": chrono::Utc::now().to_rfc3339(),
                 "duration_ms": t_start.elapsed().as_millis(),
-                "finish_reason": res.finish_reason,
-                "output_bytes": res.content.len(),
+                "finish_reason": finish_reason,
+                "output_bytes": content.len(),
             });
             if let Ok(mut file) = std::fs::OpenOptions::new()
                 .create(true)
@@ -469,16 +594,48 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         }
 
-        if args.output == "json" {
+        if args.code {
+            match extract_code(&content) {
+                Ok(extracted) => {
+                    if args.output == "json" {
+                        let json = serde_json::json!({
+                            "content": extracted.content.trim_end_matches('\n'),
+                            "language": extracted.language,
+                            "finish_reason": finish_reason,
+                            "tools_executed": res.tool_log
+                        });
+                        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+                    } else {
+                        print!("{}", extracted.content);
+                    }
+                    ApfelExitCodes::SUCCESS
+                }
+                Err(e) => {
+                    if args.output == "json" {
+                        let json = serde_json::json!({
+                            "content": "",
+                            "language": null,
+                            "finish_reason": finish_reason,
+                            "error": e.to_string(),
+                            "tools_executed": res.tool_log
+                        });
+                        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+                    } else if !args.quiet {
+                        eprintln!("{}: {}", "Error".red().bold(), e);
+                    }
+                    e.exit_code()
+                }
+            }
+        } else if args.output == "json" {
             let json = serde_json::json!({
-                "content": res.content,
-                "finish_reason": res.finish_reason,
+                "content": content,
+                "finish_reason": finish_reason,
                 "tools_executed": res.tool_log
             });
             println!("{}", serde_json::to_string_pretty(&json).unwrap());
             ApfelExitCodes::SUCCESS
         } else {
-            println!("{}", res.content);
+            println!("{}", content);
             ApfelExitCodes::SUCCESS
         }
     }

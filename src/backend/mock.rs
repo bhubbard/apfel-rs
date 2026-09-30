@@ -14,6 +14,7 @@ pub struct MockEngine {
     pub responses: std::sync::Mutex<Vec<String>>,
     pub available: bool,
     pub context_window: usize,
+    pub finish_reason: String,
 }
 
 impl MockEngine {
@@ -23,6 +24,7 @@ impl MockEngine {
             responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
+            finish_reason: "stop".to_string(),
         }
     }
 
@@ -32,6 +34,20 @@ impl MockEngine {
             responses: std::sync::Mutex::new(Vec::new()),
             available: true,
             context_window: 4096,
+            finish_reason: "stop".to_string(),
+        }
+    }
+
+    pub fn with_finish_reason(
+        response: impl Into<String>,
+        finish_reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            response: response.into(),
+            responses: std::sync::Mutex::new(Vec::new()),
+            available: true,
+            context_window: 4096,
+            finish_reason: finish_reason.into(),
         }
     }
 
@@ -45,6 +61,7 @@ impl MockEngine {
             responses: std::sync::Mutex::new(responses.into_iter().map(Into::into).collect()),
             available: true,
             context_window: 4096,
+            finish_reason: "stop".to_string(),
         }
     }
 }
@@ -98,6 +115,7 @@ impl BackendEngine for MockEngine {
             self.response.clone()
         };
 
+        let reason = self.finish_reason.clone();
         tokio::spawn(async move {
             let words: Vec<&str> = resp.split_whitespace().collect();
             for word in words {
@@ -106,7 +124,7 @@ impl BackendEngine for MockEngine {
             }
             let _ = tx
                 .send(StreamChunk::Done {
-                    finish_reason: "stop".to_string(),
+                    finish_reason: reason,
                 })
                 .await;
         });
@@ -131,7 +149,7 @@ impl BackendEngine for MockEngine {
         };
         Ok(GenerateResponse {
             content,
-            finish_reason: "stop".to_string(),
+            finish_reason: self.finish_reason.clone(),
         })
     }
 }

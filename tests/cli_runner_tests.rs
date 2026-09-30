@@ -235,3 +235,129 @@ async fn test_cli_runner_messages_flag() {
         ApfelExitCodes::USAGE_ERROR
     );
 }
+
+#[tokio::test]
+async fn test_cli_runner_code_flag_success() {
+    let mock = Arc::new(MockEngine::with_response(
+        "Here is the function:\n```python\ndef greet():\n    return 'hello'\n```\nAll done!",
+    ));
+
+    // Plain text mode
+    let args = CliArgs::parse_from(&["apfel", "--code", "Write a greeting function"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+
+    // JSON mode
+    let args_json =
+        CliArgs::parse_from(&["apfel", "--code", "-o", "json", "Write a greeting function"]);
+    assert_eq!(
+        run_cli_with_engine(args_json, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_code_flag_rejections() {
+    let mock = Arc::new(MockEngine::new());
+
+    // --code --stream conflict
+    let args_stream = CliArgs::parse_from(&["apfel", "--code", "--stream", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_stream, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --code --chat conflict
+    let args_chat = CliArgs::parse_from(&["apfel", "--code", "--chat"]);
+    assert_eq!(
+        run_cli_with_engine(args_chat, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --code --serve conflict
+    let args_serve = CliArgs::parse_from(&["apfel", "--code", "--serve"]);
+    assert_eq!(
+        run_cli_with_engine(args_serve, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+
+    // --code --schema conflict
+    let args_schema =
+        CliArgs::parse_from(&["apfel", "--code", "--schema", "schema.json", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_schema, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_code_flag_no_code_exits_7() {
+    let mock = Arc::new(MockEngine::with_response("   \n\n   "));
+    let args = CliArgs::parse_from(&["apfel", "--code", "-q", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock.clone()).await,
+        ApfelExitCodes::NO_CODE
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_require_complete_flag() {
+    // Truncated response with finish_reason: "length"
+    let mock_truncated = Arc::new(MockEngine::with_finish_reason(
+        "Truncated response...",
+        "length",
+    ));
+
+    // With --require-complete: must return exit code 8
+    let args_req = CliArgs::parse_from(&["apfel", "--no-stream", "--require-complete", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_req, mock_truncated.clone()).await,
+        ApfelExitCodes::INCOMPLETE_RESPONSE
+    );
+
+    // Without --require-complete: allows partial output, returns 0
+    let args_normal = CliArgs::parse_from(&["apfel", "--no-stream", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_normal, mock_truncated.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+
+    // Finished response with finish_reason: "stop" -> returns 0 with --require-complete
+    let mock_complete = Arc::new(MockEngine::with_finish_reason("Complete response", "stop"));
+    let args_complete =
+        CliArgs::parse_from(&["apfel", "--no-stream", "--require-complete", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_complete, mock_complete.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+
+    // Rejection in non-generation mode
+    let args_bad_serve = CliArgs::parse_from(&["apfel", "--require-complete", "--serve"]);
+    assert_eq!(
+        run_cli_with_engine(args_bad_serve, mock_complete.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_stop_flag() {
+    let mock = Arc::new(MockEngine::with_response(
+        "Action 1\nObservation: Stop before this\nAction 2",
+    ));
+
+    // Valid stop sequence truncates cleanly
+    let args = CliArgs::parse_from(&["apfel", "--no-stream", "--stop", "\nObservation:", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
+
+    // Empty stop sequence rejected with usage error (exit 2)
+    let args_empty = CliArgs::parse_from(&["apfel", "--stop", "", "Prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_empty, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+}
