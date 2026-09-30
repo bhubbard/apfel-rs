@@ -45,7 +45,7 @@ pub async fn run_batch_mode(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i3
 
 /// Core stream processor for --batch mode taking any BufRead and Write handles.
 pub async fn run_batch_stream<R: BufRead, W: Write>(
-    reader: R,
+    mut reader: R,
     mut out_handle: W,
     args: CliArgs,
     engine: Arc<dyn BackendEngine>,
@@ -62,17 +62,20 @@ pub async fn run_batch_stream<R: BufRead, W: Write>(
 
     let session_mgr = SessionManager::new(engine.clone(), None);
 
-    for line_res in reader.lines() {
-        line_number += 1;
-        let line = match line_res {
-            Ok(l) => l,
+    let mut line_buffer = String::new();
+    loop {
+        line_buffer.clear();
+        match reader.read_line(&mut line_buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
             Err(e) => {
-                eprintln!("Error reading stdin line {}: {}", line_number, e);
+                eprintln!("Error reading stdin line {}: {}", line_number + 1, e);
                 return ApfelExitCodes::RUNTIME_ERROR;
             }
-        };
+        }
+        line_number += 1;
 
-        let trimmed = line.trim();
+        let trimmed = line_buffer.trim();
         if trimmed.is_empty() {
             continue;
         }

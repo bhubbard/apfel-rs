@@ -111,7 +111,7 @@ impl StopSequenceMatcher {
             let safe_len = self.buffer.len().saturating_sub(max_prefix_len);
             if safe_len > 0 {
                 let emit_str = self.buffer[..safe_len].to_string();
-                self.buffer = self.buffer[safe_len..].to_string();
+                self.buffer.drain(..safe_len);
                 StopMatchResult::Emit(emit_str)
             } else {
                 StopMatchResult::Holding
