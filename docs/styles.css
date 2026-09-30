@@ -901,6 +901,52 @@ a:hover {
   }
 }
 
+/* Simplicity Value Props (Inspired by apfel.franzai.com) */
+.hero-pills {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 auto 28px;
+}
+
+.hero-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
+  color: var(--text-main);
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.hero-note {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-top: -24px;
+  margin-bottom: 32px;
+}
+
+.hero-note a {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.hero-note a:hover {
+  color: #fff;
+}
+
 /* Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   * {
