@@ -39,7 +39,7 @@ jobs:
 
       - name: Install cargo-deny
         if: matrix.os == 'macos-15'
-        run: cargo install cargo-deny --locked
+        uses: taiki-e/install-action@cargo-deny
 
       - name: Cargo Deny Check
         if: matrix.os == 'macos-15'

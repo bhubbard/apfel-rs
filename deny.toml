@@ -1,6 +1,6 @@
 [advisories]
-unmaintained = "deny"
-unsound = "deny"
+unmaintained = "all"
+unsound = "all"
 
 [licenses]
 unlicensed = "deny"
