@@ -69,7 +69,11 @@ fn test_1_token_counting_stress(swift_bin: Option<&Path>, rust_bin: &Path) -> Op
                   Modern systems programming requires memory safety without sacrificing throughput. "
         .repeat(50);
     let words = corpus.split_whitespace().count();
-    println!("Payload size: {} characters (~{} words)", corpus.len(), words);
+    println!(
+        "Payload size: {} characters (~{} words)",
+        corpus.len(),
+        words
+    );
 
     let mut swift_durations = Vec::new();
     if let Some(swift) = swift_bin {
@@ -95,11 +99,28 @@ fn test_1_token_counting_stress(swift_bin: Option<&Path>, rust_bin: &Path) -> Op
         rust_durations.push(t0.elapsed().as_secs_f64() * 1000.0);
     }
 
+    let mut mlx_durations = Vec::new();
+    for _ in 0..30 {
+        let t0 = Instant::now();
+        let _ = Command::new(rust_bin)
+            .args(["--engine", "mlx", "--count-tokens", &corpus])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        mlx_durations.push(t0.elapsed().as_secs_f64() * 1000.0);
+    }
+
     rust_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let rust_avg: f64 = rust_durations.iter().sum::<f64>() / rust_durations.len() as f64;
     let rust_p50 = rust_durations[rust_durations.len() / 2];
     let rust_min = rust_durations[0];
     let rust_max = rust_durations[rust_durations.len() - 1];
+
+    mlx_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mlx_avg: f64 = mlx_durations.iter().sum::<f64>() / mlx_durations.len() as f64;
+    let mlx_p50 = mlx_durations[mlx_durations.len() / 2];
+    let mlx_min = mlx_durations[0];
+    let mlx_max = mlx_durations[mlx_durations.len() - 1];
 
     if !swift_durations.is_empty() {
         swift_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -114,8 +135,12 @@ fn test_1_token_counting_stress(swift_bin: Option<&Path>, rust_bin: &Path) -> Op
             swift_avg, swift_p50, swift_min, swift_max
         );
         println!(
-            "Rust (apfel-rs): mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
+            "Rust (Default) : mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
             rust_avg, rust_p50, rust_min, rust_max
+        );
+        println!(
+            "Rust (MLX)     : mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
+            mlx_avg, mlx_p50, mlx_min, mlx_max
         );
         println!(
             "Advantage      : Rust is {:.2}x faster ({:.1}ms faster per operation)",
@@ -130,8 +155,12 @@ fn test_1_token_counting_stress(swift_bin: Option<&Path>, rust_bin: &Path) -> Op
         })
     } else {
         println!(
-            "Rust (apfel-rs): mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
+            "Rust (Default) : mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
             rust_avg, rust_p50, rust_min, rust_max
+        );
+        println!(
+            "Rust (MLX)     : mean = {:.2} ms | p50 = {:.2} ms (min: {:.2}, max: {:.2})",
+            mlx_avg, mlx_p50, mlx_min, mlx_max
         );
         None
     }
@@ -163,7 +192,8 @@ fn test_2_generation_throughput(swift_bin: Option<&Path>, rust_bin: &Path) {
         }
         if !swift_times.is_empty() {
             let avg_time: f64 = swift_times.iter().sum::<f64>() / swift_times.len() as f64;
-            let avg_chars: f64 = swift_chars.iter().sum::<usize>() as f64 / swift_chars.len() as f64;
+            let avg_chars: f64 =
+                swift_chars.iter().sum::<usize>() as f64 / swift_chars.len() as f64;
             let tps = (avg_chars / 4.0) / avg_time;
             println!(
                 "Original Swift : {:.3} s total ({:.0} chars, ~{:.1} tokens/sec)",
@@ -191,7 +221,39 @@ fn test_2_generation_throughput(swift_bin: Option<&Path>, rust_bin: &Path) {
         let avg_chars: f64 = rust_chars.iter().sum::<usize>() as f64 / rust_chars.len() as f64;
         let tps = (avg_chars / 4.0) / avg_time;
         println!(
-            "Rust (apfel-rs): {:.3} s total ({:.0} chars, ~{:.1} tokens/sec)",
+            "Rust (Default) : {:.3} s total ({:.0} chars, ~{:.1} tokens/sec)",
+            avg_time, avg_chars, tps
+        );
+    }
+
+    let mut mlx_times = Vec::new();
+    let mut mlx_chars = Vec::new();
+    for _ in 0..3 {
+        let t0 = Instant::now();
+        if let Ok(out) = Command::new(rust_bin)
+            .args([
+                "--engine",
+                "mlx",
+                "--temperature",
+                "0",
+                "--max-tokens",
+                "600",
+                prompt,
+            ])
+            .output()
+        {
+            if out.status.success() {
+                mlx_times.push(t0.elapsed().as_secs_f64());
+                mlx_chars.push(out.stdout.len());
+            }
+        }
+    }
+    if !mlx_times.is_empty() {
+        let avg_time: f64 = mlx_times.iter().sum::<f64>() / mlx_times.len() as f64;
+        let avg_chars: f64 = mlx_chars.iter().sum::<usize>() as f64 / mlx_chars.len() as f64;
+        let tps = (avg_chars / 4.0) / avg_time;
+        println!(
+            "Rust (MLX)     : {:.3} s total ({:.0} chars, ~{:.1} tokens/sec)",
             avg_time, avg_chars, tps
         );
     }
@@ -205,7 +267,12 @@ struct ConcurrencyStats {
     rss_mb: f64,
 }
 
-async fn hammer_server(port: u16, total_requests: usize, concurrency: usize, child_pid: u32) -> ConcurrencyStats {
+async fn hammer_server(
+    port: u16,
+    total_requests: usize,
+    concurrency: usize,
+    child_pid: u32,
+) -> ConcurrencyStats {
     let url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -321,12 +388,21 @@ async fn test_3_server_concurrency_stress(swift_bin: Option<&Path>, rust_bin: &P
         println!("Original Swift (Hummingbird):");
         println!("  • Total Time for 100 reqs : {:.3} s", s.total_dur);
         println!("  • Throughput (RPS)        : {:.1} req/sec", s.rps);
-        println!("  • Latency Median (p50)    : {:.2} ms | p95: {:.2} ms", s.p50, s.p95);
+        println!(
+            "  • Latency Median (p50)    : {:.2} ms | p95: {:.2} ms",
+            s.p50, s.p95
+        );
         println!("  • Active Resident RAM     : {:.1} MB", s.rss_mb);
 
-        println!("\nRust (apfel-rs Axum/Tokio):");
-        println!("  • Total Time for 100 reqs : {:.3} s", rust_stats.total_dur);
-        println!("  • Throughput (RPS)        : {:.1} req/sec", rust_stats.rps);
+        println!("\nRust (apfel-rs Axum/Tokio — Default):");
+        println!(
+            "  • Total Time for 100 reqs : {:.3} s",
+            rust_stats.total_dur
+        );
+        println!(
+            "  • Throughput (RPS)        : {:.1} req/sec",
+            rust_stats.rps
+        );
         println!(
             "  • Latency Median (p50)    : {:.2} ms | p95: {:.2} ms",
             rust_stats.p50, rust_stats.p95
@@ -335,22 +411,60 @@ async fn test_3_server_concurrency_stress(swift_bin: Option<&Path>, rust_bin: &P
 
         let speedup = rust_stats.rps / s.rps;
         let mem_saved = ((s.rss_mb - rust_stats.rss_mb) / s.rss_mb) * 100.0;
-        println!("\nAdvantage:");
-        println!("  • Throughput: Rust handles {:.2}x more requests/sec", speedup);
+        println!("\nAdvantage (vs Swift):");
+        println!(
+            "  • Throughput: Rust handles {:.2}x more requests/sec",
+            speedup
+        );
         println!(
             "  • Memory    : Rust uses {:.1}% less RAM under load ({:.1} MB vs {:.1} MB)",
             mem_saved, rust_stats.rss_mb, s.rss_mb
         );
     } else {
-        println!("Rust (apfel-rs Axum/Tokio):");
-        println!("  • Total Time for 100 reqs : {:.3} s", rust_stats.total_dur);
-        println!("  • Throughput (RPS)        : {:.1} req/sec", rust_stats.rps);
+        println!("Rust (apfel-rs Axum/Tokio — Default):");
+        println!(
+            "  • Total Time for 100 reqs : {:.3} s",
+            rust_stats.total_dur
+        );
+        println!(
+            "  • Throughput (RPS)        : {:.1} req/sec",
+            rust_stats.rps
+        );
         println!(
             "  • Latency Median (p50)    : {:.2} ms | p95: {:.2} ms",
             rust_stats.p50, rust_stats.p95
         );
         println!("  • Active Resident RAM     : {:.1} MB", rust_stats.rss_mb);
     }
+
+    // Benchmark MLX server instance
+    let mlx_port = 8913;
+    let mut mlx_child = Command::new(rust_bin)
+        .args([
+            "--serve",
+            "--engine",
+            "mlx",
+            "--port",
+            &mlx_port.to_string(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to start Rust MLX server");
+
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mlx_stats = hammer_server(mlx_port, 100, 10, mlx_child.id()).await;
+    let _ = mlx_child.kill();
+    let _ = mlx_child.wait();
+
+    println!("\nRust (apfel-rs Axum/Tokio — MLX):");
+    println!("  • Total Time for 100 reqs : {:.3} s", mlx_stats.total_dur);
+    println!("  • Throughput (RPS)        : {:.1} req/sec", mlx_stats.rps);
+    println!(
+        "  • Latency Median (p50)    : {:.2} ms | p95: {:.2} ms",
+        mlx_stats.p50, mlx_stats.p95
+    );
+    println!("  • Active Resident RAM     : {:.1} MB", mlx_stats.rss_mb);
 }
 
 #[tokio::main]

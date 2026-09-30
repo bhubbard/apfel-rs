@@ -4,17 +4,15 @@
 // ============================================================================
 
 use std::collections::HashMap;
+use subtle::ConstantTimeEq;
 
 /// Validates HTTP request origins and authorization tokens for localhost security.
 #[derive(Debug)]
 pub struct OriginValidator;
 
 impl OriginValidator {
-    pub const DEFAULT_ALLOWED_ORIGINS: &'static [&'static str] = &[
-        "http://127.0.0.1",
-        "http://localhost",
-        "http://[::1]",
-    ];
+    pub const DEFAULT_ALLOWED_ORIGINS: &'static [&'static str] =
+        &["http://127.0.0.1", "http://localhost", "http://[::1]"];
 
     pub fn is_allowed(origin: Option<&str>, allowed_origins: &[String]) -> bool {
         let Some(origin) = origin else {
@@ -85,32 +83,34 @@ impl OriginValidator {
     }
 
     /// Constant-time string equality over UTF-8 bytes to prevent timing attacks.
+    /// Uses `subtle` crate instead of a hand-rolled loop to guarantee constant-time
+    /// execution without risk of the compiler optimizing it into a variable-time operation.
     pub fn constant_time_equals(a: &str, b: &str) -> bool {
-        let lhs = a.as_bytes();
-        let rhs = b.as_bytes();
-        let max_len = lhs.len().max(rhs.len());
-
-        let mut diff: u8 = if lhs.len() == rhs.len() { 0 } else { 1 };
-        for i in 0..max_len {
-            let x = if i < lhs.len() { lhs[i] } else { 0 };
-            let y = if i < rhs.len() { rhs[i] } else { 0 };
-            diff |= x ^ y;
-        }
-        diff == 0
+        a.as_bytes().ct_eq(b.as_bytes()).into()
     }
 }
 
 /// Scrub sensitive keys from subprocess environments (APFEL_TOKEN, AWS keys, etc.)
 pub fn scrub_mcp_environment(env: &HashMap<String, String>) -> HashMap<String, String> {
     let allowed_prefixes = [
-        "PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_", "TERM", "VIRTUAL_ENV",
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "TMPDIR",
+        "LANG",
+        "LC_",
+        "TERM",
+        "VIRTUAL_ENV",
     ];
     let blocked_keywords = ["TOKEN", "SECRET", "KEY", "PASSWORD", "AUTH", "CREDENTIAL"];
 
     let mut scrubbed = HashMap::new();
     for (k, v) in env {
         let k_upper = k.to_uppercase();
-        let is_allowed = allowed_prefixes.iter().any(|prefix| k_upper.starts_with(prefix));
+        let is_allowed = allowed_prefixes
+            .iter()
+            .any(|prefix| k_upper.starts_with(prefix));
         let is_blocked = blocked_keywords.iter().any(|kw| k_upper.contains(kw));
 
         if is_allowed && !is_blocked {

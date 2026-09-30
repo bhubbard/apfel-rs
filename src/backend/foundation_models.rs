@@ -41,13 +41,19 @@ extern "C" fn on_bridge_chunk(
         return;
     }
 
+    // SAFETY: The bridge guarantees `user_data` is a valid pointer to a `std_mpsc::Sender<StreamChunk>`.
+    // The sender is allocated on the stack of the calling thread, which blocks on `apfel_bridge_generate_json`
+    // until all callbacks complete, ensuring the pointer is valid and outlives this callback. (No Use-After-Free)
     let sender = unsafe { &*(user_data as *const std_mpsc::Sender<StreamChunk>) };
 
     if !error.is_null() {
+        // SAFETY: `error` is provided by the Swift bridge, which guarantees it is a valid null-terminated UTF-8 C string.
         let err_msg = unsafe { CStr::from_ptr(error).to_string_lossy().to_string() };
         let err = if err_msg.to_lowercase().contains("guardrail") {
             ApfelError::Guardrail(err_msg)
-        } else if err_msg.to_lowercase().contains("context") || err_msg.to_lowercase().contains("token") {
+        } else if err_msg.to_lowercase().contains("context")
+            || err_msg.to_lowercase().contains("token")
+        {
             ApfelError::ContextOverflow(err_msg)
         } else {
             ApfelError::Runtime(err_msg)
@@ -57,17 +63,26 @@ extern "C" fn on_bridge_chunk(
     }
 
     if !chunk.is_null() {
+        // SAFETY: `chunk` is provided by the Swift bridge, which guarantees it is a valid null-terminated UTF-8 C string.
         let text = unsafe { CStr::from_ptr(chunk).to_str().unwrap_or("").to_string() };
         let _ = sender.send(StreamChunk::Delta(text));
     }
 
     if is_done {
         let reason = if !finish_reason.is_null() {
-            unsafe { CStr::from_ptr(finish_reason).to_str().unwrap_or("stop").to_string() }
+            // SAFETY: `finish_reason` is provided by the Swift bridge, which guarantees it is a valid null-terminated UTF-8 C string.
+            unsafe {
+                CStr::from_ptr(finish_reason)
+                    .to_str()
+                    .unwrap_or("stop")
+                    .to_string()
+            }
         } else {
             "stop".to_string()
         };
-        let _ = sender.send(StreamChunk::Done { finish_reason: reason });
+        let _ = sender.send(StreamChunk::Done {
+            finish_reason: reason,
+        });
     }
 }
 
@@ -89,10 +104,14 @@ impl Default for FoundationModelsEngine {
 
 impl BackendEngine for FoundationModelsEngine {
     fn is_available(&self) -> bool {
+        // SAFETY: Calling `apfel_bridge_is_available` from the Swift bridge static library linked at build time.
+        // Takes no arguments and has no side effects on Rust memory.
         unsafe { apfel_bridge_is_available() }
     }
 
     fn context_size(&self) -> usize {
+        // SAFETY: Calling `apfel_bridge_context_size` from the Swift bridge static library linked at build time.
+        // Takes no arguments and has no side effects on Rust memory.
         let size = unsafe { apfel_bridge_context_size() };
         if size > 0 {
             size as usize
@@ -106,6 +125,8 @@ impl BackendEngine for FoundationModelsEngine {
             return 0;
         }
         if let Ok(c_text) = CString::new(text) {
+            // SAFETY: Calling `apfel_bridge_token_count` from the Swift bridge static library linked at build time.
+            // `c_text` is a valid null-terminated C string whose pointer remains valid for the duration of the call.
             let n = unsafe { apfel_bridge_token_count(c_text.as_ptr()) };
             if n > 0 {
                 return n as usize;
@@ -115,10 +136,12 @@ impl BackendEngine for FoundationModelsEngine {
     }
 
     fn supported_languages(&self) -> Vec<String> {
+        // SAFETY: Calling `apfel_bridge_supported_languages` from the Swift bridge static library linked at build time.
         let ptr = unsafe { apfel_bridge_supported_languages() };
         if ptr.is_null() {
             return vec!["en".to_string()];
         }
+        // SAFETY: The bridge guarantees the returned pointer is a valid null-terminated C string.
         let s = unsafe { CStr::from_ptr(ptr).to_string_lossy() };
         s.split(',')
             .map(|part| part.trim().to_string())
@@ -146,10 +169,20 @@ impl BackendEngine for FoundationModelsEngine {
 
         // Native bridge thread
         std::thread::spawn(move || {
+            // Elevate thread QoS so macOS schedules this on P-cores (performance cores)
+            // rather than E-cores (efficiency cores) on Apple Silicon.
+            // SAFETY: pthread_set_qos_class_self_np is safe to call on the current thread.
+            // QOS_CLASS_USER_INITIATED (0x19) ensures high priority without starving UI apps.
+            unsafe {
+                libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
+            }
             let tx_ptr = &std_tx as *const std_mpsc::Sender<StreamChunk> as *mut c_void;
-            let code = unsafe {
-                apfel_bridge_generate_json(c_json.as_ptr(), tx_ptr, on_bridge_chunk)
-            };
+            // SAFETY: Calling `apfel_bridge_generate_json` from the Swift bridge static library linked at build time.
+            // `c_json` is a valid null-terminated C string whose pointer remains valid for the duration of the call.
+            // `tx_ptr` points to `std_tx` which is allocated on the stack of this thread. Since `apfel_bridge_generate_json`
+            // blocks until all callbacks are complete, `std_tx` remains valid and in scope for the entire FFI call.
+            let code =
+                unsafe { apfel_bridge_generate_json(c_json.as_ptr(), tx_ptr, on_bridge_chunk) };
             if code != 0 {
                 tracing::debug!("FoundationModels bridge exited with code {}", code);
             }
@@ -181,9 +214,12 @@ impl BackendEngine for FoundationModelsEngine {
 
         std::thread::spawn(move || {
             let tx_ptr = &std_tx as *const std_mpsc::Sender<StreamChunk> as *mut c_void;
-            let code = unsafe {
-                apfel_bridge_generate_json(c_json.as_ptr(), tx_ptr, on_bridge_chunk)
-            };
+            // SAFETY: Calling `apfel_bridge_generate_json` from the Swift bridge static library linked at build time.
+            // `c_json` is a valid null-terminated C string whose pointer remains valid for the duration of the call.
+            // `tx_ptr` points to `std_tx` which is allocated on the stack of this thread. Since `apfel_bridge_generate_json`
+            // blocks until all callbacks are complete, `std_tx` remains valid and in scope for the entire FFI call.
+            let code =
+                unsafe { apfel_bridge_generate_json(c_json.as_ptr(), tx_ptr, on_bridge_chunk) };
             if code != 0 {
                 tracing::debug!("FoundationModels bridge exited with code {}", code);
             }

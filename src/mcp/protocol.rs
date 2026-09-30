@@ -56,9 +56,8 @@ impl MCPProtocol {
     }
 
     pub fn tools_call_request(id: usize, name: &str, arguments: &str) -> String {
-        let args_obj: serde_json::Value = serde_json::from_str(arguments).unwrap_or_else(|_| {
-            serde_json::json!({})
-        });
+        let args_obj: serde_json::Value =
+            serde_json::from_str(arguments).unwrap_or_else(|_| serde_json::json!({}));
 
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -93,7 +92,9 @@ impl MCPProtocol {
         let server_info = val
             .get("result")
             .and_then(|r| r.get("serverInfo"))
-            .ok_or_else(|| ApfelError::MCP("Missing serverInfo in initialize response".to_string()))?;
+            .ok_or_else(|| {
+                ApfelError::MCP("Missing serverInfo in initialize response".to_string())
+            })?;
 
         let name = server_info
             .get("name")
@@ -118,7 +119,9 @@ impl MCPProtocol {
             .get("result")
             .and_then(|r| r.get("tools"))
             .and_then(|t| t.as_array())
-            .ok_or_else(|| ApfelError::MCP("Missing tools array in tools/list response".to_string()))?;
+            .ok_or_else(|| {
+                ApfelError::MCP("Missing tools array in tools/list response".to_string())
+            })?;
 
         let mut out = Vec::new();
         for item in tools_arr {
@@ -158,9 +161,9 @@ impl MCPProtocol {
             return Ok((format!("Error: {}", msg), true));
         }
 
-        let result_obj = val.get("result").ok_or_else(|| {
-            ApfelError::MCP("Missing result in tools/call response".to_string())
-        })?;
+        let result_obj = val
+            .get("result")
+            .ok_or_else(|| ApfelError::MCP("Missing result in tools/call response".to_string()))?;
 
         let is_error = result_obj
             .get("isError")
@@ -172,7 +175,9 @@ impl MCPProtocol {
                 .iter()
                 .filter_map(|item| {
                     if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                        item.get("text")
+                            .and_then(|t| t.as_str())
+                            .map(|s| s.to_string())
                     } else {
                         None
                     }
@@ -181,6 +186,9 @@ impl MCPProtocol {
             return Ok((texts.join("\n"), is_error));
         }
 
-        Ok((serde_json::to_string(result_obj).unwrap_or_default(), is_error))
+        Ok((
+            serde_json::to_string(result_obj).unwrap_or_default(),
+            is_error,
+        ))
     }
 }

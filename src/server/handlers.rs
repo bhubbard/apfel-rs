@@ -85,6 +85,12 @@ pub(crate) async fn list_models_handler() -> impl IntoResponse {
                 created: 1718000000,
                 owned_by: "apple".to_string(),
             },
+            ModelObject {
+                id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit".to_string(),
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "mlx-community".to_string(),
+            },
         ],
     };
     Json(resp)
@@ -115,11 +121,7 @@ pub(crate) async fn chat_completions_handler(
     let effective_max_tokens = match req.validate_max_tokens() {
         Ok(t) => t,
         Err(err) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(err.to_openai_json()),
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, Json(err.to_openai_json())).into_response();
         }
     };
 
@@ -145,7 +147,11 @@ pub(crate) async fn chat_completions_handler(
 
         let gen_req = GenerateRequest {
             prompt: last_prompt,
-            system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
+            system_prompt: if system_prompt.is_empty() {
+                None
+            } else {
+                Some(system_prompt)
+            },
             messages: Some(req.messages.clone()),
             temperature: req.temperature,
             top_p: req.top_p,
@@ -158,7 +164,8 @@ pub(crate) async fn chat_completions_handler(
             Ok(rx) => rx,
             Err(e) => {
                 return (
-                    StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    StatusCode::from_u16(e.http_status())
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                     Json(e.to_openai_json()),
                 )
                     .into_response();
@@ -168,7 +175,11 @@ pub(crate) async fn chat_completions_handler(
         let stream_id = format!("chatcmpl-{}", Uuid::new_v4());
         let model_name = req.model.clone();
 
-        let stop_seqs: Vec<String> = req.stop_sequences().into_iter().map(|s| s.to_string()).collect();
+        let stop_seqs: Vec<String> = req
+            .stop_sequences()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
         let stream = async_stream::stream! {
             let created = chrono::Utc::now().timestamp();
             let mut accumulated = String::new();
@@ -294,7 +305,8 @@ pub(crate) async fn chat_completions_handler(
             Ok(r) => r,
             Err(e) => {
                 return (
-                    StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    StatusCode::from_u16(e.http_status())
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                     Json(e.to_openai_json()),
                 )
                     .into_response();
@@ -358,7 +370,8 @@ pub(crate) async fn responses_handler(
     Json(req): Json<ResponsesRequest>,
 ) -> Response {
     if req.background == Some(true) {
-        let err = ApfelError::NotImplemented("background=true is not supported on-device".to_string());
+        let err =
+            ApfelError::NotImplemented("background=true is not supported on-device".to_string());
         return (StatusCode::NOT_IMPLEMENTED, Json(err.to_openai_json())).into_response();
     }
     if req.previous_response_id.is_some() {
@@ -434,7 +447,9 @@ pub(crate) async fn responses_handler(
         id: format!("resp-{}", Uuid::new_v4()),
         object: "response".to_string(),
         created_at: chrono::Utc::now().timestamp(),
-        model: req.model.unwrap_or_else(|| "apple-foundationmodel".to_string()),
+        model: req
+            .model
+            .unwrap_or_else(|| "apple-foundationmodel".to_string()),
         status: "completed".to_string(),
         output: vec![ResponsesOutputItem::Message {
             id: format!("msg-{}", Uuid::new_v4()),

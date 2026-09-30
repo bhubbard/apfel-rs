@@ -10,7 +10,7 @@ use clap::Parser;
 #[command(
     name = "apfel",
     author = "Brandon Hubbard <bhubbard@users.noreply.github.com>",
-    version = "0.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     about = "Apple Intelligence on-device model from the command line and OpenAI-compatible server",
     after_help = "Examples:\n  apfel \"Explain quantum computing\"\n  apfel --stream \"Write a poem\"\n  apfel --chat\n  apfel --serve --port 8080\n  apfel --model-info\n  apfel --count-tokens \"Sample text\""
 )]
@@ -62,6 +62,14 @@ pub struct CliArgs {
     /// Allow binding to non-localhost without authentication
     #[arg(long = "footgun")]
     pub footgun: bool,
+
+    /// Backend engine to use: foundation (default on macOS), mlx, or mock
+    #[arg(long = "engine", value_name = "ENGINE")]
+    pub engine: Option<String>,
+
+    /// Specific model name or HuggingFace repo (used with mlx engine)
+    #[arg(short = 'm', long = "model", value_name = "MODEL")]
+    pub model: Option<String>,
 
     /// Show model information, availability, and context size
     #[arg(long = "model-info")]

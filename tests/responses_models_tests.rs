@@ -71,9 +71,7 @@ fn test_response_object_serialization() {
         output: vec![ResponsesOutputItem::Message {
             id: "msg_1".into(),
             role: "assistant".into(),
-            content: vec![ResponsesOutputContent::Text {
-                text: "4".into(),
-            }],
+            content: vec![ResponsesOutputContent::Text { text: "4".into() }],
         }],
         usage: ResponsesUsage {
             input_tokens: 10,

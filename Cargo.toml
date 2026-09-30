@@ -2,10 +2,12 @@
 name = "apfel-rs"
 version = "0.1.1"
 edition = "2021"
+rust-version = "1.80"
 authors = ["Brandon Hubbard", "apfel-rs contributors"]
 license = "MIT"
 description = "High-performance Rust fork of apfel: Apple Intelligence and FoundationModels from the command line and OpenAI-compatible server"
 repository = "https://github.com/bhubbard/apfel-rs"
+documentation = "https://code.brandonhubbard.com/apfel-rs/"
 keywords = ["apple-intelligence", "foundation-models", "llm", "openai", "mcp"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
@@ -18,7 +20,8 @@ name = "apfel"
 path = "src/bin/main.rs"
 
 [dependencies]
-tokio = { version = "1.40", features = ["full"] }
+subtle = "2.6"
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "signal", "sync", "time", "fs", "process"] }
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }

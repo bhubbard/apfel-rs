@@ -175,9 +175,17 @@ impl ToolCallHandler {
             if !in_str {
                 match c {
                     '{' => open_braces += 1,
-                    '}' => if open_braces > 0 { open_braces -= 1 },
+                    '}' => {
+                        if open_braces > 0 {
+                            open_braces -= 1
+                        }
+                    }
                     '[' => open_brackets += 1,
-                    ']' => if open_brackets > 0 { open_brackets -= 1 },
+                    ']' => {
+                        if open_brackets > 0 {
+                            open_brackets -= 1
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -229,7 +237,10 @@ impl ToolOutputTruncator {
         let shown_tokens = ((allowed_chars as f64) * tokens_per_char).round() as usize;
 
         let head: String = text.chars().take(head_chars).collect();
-        let tail: String = text.chars().skip(char_count.saturating_sub(tail_chars)).collect();
+        let tail: String = text
+            .chars()
+            .skip(char_count.saturating_sub(tail_chars))
+            .collect();
         let marker = format!(
             "\n\n[tool output truncated: {} of {} tokens shown]\n\n",
             shown_tokens, token_count

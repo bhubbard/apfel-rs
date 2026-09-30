@@ -19,8 +19,9 @@ fn test_context_strategy_newest_first() {
     };
 
     // Budget fits system prompt (2) + last 2 messages (2 + 2 = 4) = 6 tokens
-    let trimmed = ContextManager::trim_messages(&messages, 6, &config, |s| s.split_whitespace().count())
-        .expect("Trimming failed");
+    let trimmed =
+        ContextManager::trim_messages(&messages, 6, &config, |s| s.split_whitespace().count())
+            .expect("Trimming failed");
 
     assert_eq!(trimmed[0].role, "system");
     assert_eq!(trimmed[1].role, "user");
@@ -120,7 +121,9 @@ fn test_context_strategy_summarize() {
         .expect("Trimming failed");
 
     // Should include system instruction, note about dropped messages, and kept message
-    assert!(trimmed.iter().any(|m| m.text_content().contains("prior messages were summarized/truncated")));
+    assert!(trimmed.iter().any(|m| m
+        .text_content()
+        .contains("prior messages were summarized/truncated")));
     assert_eq!(trimmed.last().unwrap().text_content(), "New message");
 }
 
@@ -140,14 +143,38 @@ fn test_context_instructions_exceeding_budget_fails() {
 fn test_context_strategy_from_str() {
     use std::str::FromStr;
 
-    assert_eq!(ContextStrategy::from_str("newest-first").unwrap(), ContextStrategy::NewestFirst);
-    assert_eq!(ContextStrategy::from_str("newest").unwrap(), ContextStrategy::NewestFirst);
-    assert_eq!(ContextStrategy::from_str("oldest-first").unwrap(), ContextStrategy::OldestFirst);
-    assert_eq!(ContextStrategy::from_str("oldest").unwrap(), ContextStrategy::OldestFirst);
-    assert_eq!(ContextStrategy::from_str("sliding-window").unwrap(), ContextStrategy::SlidingWindow);
-    assert_eq!(ContextStrategy::from_str("sliding").unwrap(), ContextStrategy::SlidingWindow);
-    assert_eq!(ContextStrategy::from_str("summarize").unwrap(), ContextStrategy::Summarize);
-    assert_eq!(ContextStrategy::from_str("strict").unwrap(), ContextStrategy::Strict);
+    assert_eq!(
+        ContextStrategy::from_str("newest-first").unwrap(),
+        ContextStrategy::NewestFirst
+    );
+    assert_eq!(
+        ContextStrategy::from_str("newest").unwrap(),
+        ContextStrategy::NewestFirst
+    );
+    assert_eq!(
+        ContextStrategy::from_str("oldest-first").unwrap(),
+        ContextStrategy::OldestFirst
+    );
+    assert_eq!(
+        ContextStrategy::from_str("oldest").unwrap(),
+        ContextStrategy::OldestFirst
+    );
+    assert_eq!(
+        ContextStrategy::from_str("sliding-window").unwrap(),
+        ContextStrategy::SlidingWindow
+    );
+    assert_eq!(
+        ContextStrategy::from_str("sliding").unwrap(),
+        ContextStrategy::SlidingWindow
+    );
+    assert_eq!(
+        ContextStrategy::from_str("summarize").unwrap(),
+        ContextStrategy::Summarize
+    );
+    assert_eq!(
+        ContextStrategy::from_str("strict").unwrap(),
+        ContextStrategy::Strict
+    );
 
     assert!(ContextStrategy::from_str("invalid-strategy").is_err());
 }
@@ -226,10 +253,7 @@ fn test_context_sliding_window_fewer_turns() {
 
 #[test]
 fn test_context_summarize_all_fit() {
-    let messages = vec![
-        OpenAIMessage::system("System"),
-        OpenAIMessage::user("Hi"),
-    ];
+    let messages = vec![OpenAIMessage::system("System"), OpenAIMessage::user("Hi")];
 
     let config = ContextConfig {
         strategy: ContextStrategy::Summarize,
@@ -243,6 +267,7 @@ fn test_context_summarize_all_fit() {
 
     // All messages fit, so no note should be injected
     assert_eq!(trimmed.len(), 2);
-    assert!(!trimmed.iter().any(|m| m.text_content().contains("prior messages were summarized")));
+    assert!(!trimmed
+        .iter()
+        .any(|m| m.text_content().contains("prior messages were summarized")));
 }
-

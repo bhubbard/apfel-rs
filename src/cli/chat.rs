@@ -33,7 +33,11 @@ pub fn save_conversation(path: &str, history: &[OpenAIMessage]) -> Result<(), Ap
     } else {
         let mut md = String::new();
         for m in history {
-            md.push_str(&format!("### {}\n\n{}\n\n", m.role.to_uppercase(), m.text_content()));
+            md.push_str(&format!(
+                "### {}\n\n{}\n\n",
+                m.role.to_uppercase(),
+                m.text_content()
+            ));
         }
         std::fs::write(path, md).map_err(|e| ApfelError::Runtime(e.to_string()))?;
     }
@@ -50,7 +54,10 @@ pub async fn run_chat_loop(
     strategy: ContextStrategy,
 ) -> Result<(), ApfelError> {
     println!("{}", "apfel interactive chat session".bold().cyan());
-    println!("{}", "Commands: /exit to quit, /clear to reset history, /info for status".dimmed());
+    println!(
+        "{}",
+        "Commands: /exit to quit, /clear to reset history, /info for status".dimmed()
+    );
     println!();
 
     let mut rl = DefaultEditor::new().map_err(|e| ApfelError::Runtime(e.to_string()))?;
@@ -87,8 +94,15 @@ pub async fn run_chat_loop(
                     let path = trimmed[6..].trim();
                     match save_conversation(path, &history) {
                         Ok(_) => {
-                            let fmt = if path.ends_with(".json") { "JSON" } else { "Markdown" };
-                            println!("{}", format!("Saved conversation {} to '{}'", fmt, path).green());
+                            let fmt = if path.ends_with(".json") {
+                                "JSON"
+                            } else {
+                                "Markdown"
+                            };
+                            println!(
+                                "{}",
+                                format!("Saved conversation {} to '{}'", fmt, path).green()
+                            );
                         }
                         Err(e) => {
                             eprintln!("{}", format!("Failed to write to '{}': {}", path, e).red());
@@ -133,8 +147,12 @@ pub async fn run_chat_loop(
                     "/system" => {
                         let sys = history.iter().find(|m| m.role == "system");
                         match sys {
-                            Some(m) => println!("Current system prompt:\n{}", m.text_content().cyan()),
-                            None => println!("No system prompt set. Use '/system <prompt>' to set one."),
+                            Some(m) => {
+                                println!("Current system prompt:\n{}", m.text_content().cyan())
+                            }
+                            None => {
+                                println!("No system prompt set. Use '/system <prompt>' to set one.")
+                            }
                         }
                         continue;
                     }
@@ -154,18 +172,16 @@ pub async fn run_chat_loop(
 
                 // Trim context to fit
                 let budget = engine.context_size().saturating_sub(config.output_reserve);
-                let trimmed_messages = match ContextManager::trim_messages(
-                    &history,
-                    budget,
-                    &config,
-                    |t| engine.count_tokens(t),
-                ) {
-                    Some(m) => m,
-                    None => {
-                        eprintln!("{}", "Error: conversation exceeds context limit.".red());
-                        continue;
-                    }
-                };
+                let trimmed_messages =
+                    match ContextManager::trim_messages(&history, budget, &config, |t| {
+                        engine.count_tokens(t)
+                    }) {
+                        Some(m) => m,
+                        None => {
+                            eprintln!("{}", "Error: conversation exceeds context limit.".red());
+                            continue;
+                        }
+                    };
 
                 let sys = trimmed_messages
                     .iter()

@@ -3,7 +3,7 @@
 // Part of apfel-rs
 // ============================================================================
 
-use crate::backend::default_engine;
+use crate::backend::create_engine;
 use crate::backend::engine::{BackendEngine, GenerateRequest, StreamChunk};
 use crate::cli::args::CliArgs;
 use crate::cli::chat::run_chat_loop;
@@ -19,9 +19,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Executes the apfel CLI with the default platform backend engine.
+/// Executes the apfel CLI with the configured backend engine.
 pub async fn run_cli(args: CliArgs) -> i32 {
-    let engine = default_engine();
+    let engine = create_engine(args.engine.as_deref(), args.model.as_deref());
     run_cli_with_engine(args, engine).await
 }
 
@@ -82,7 +82,10 @@ fn run_completions(shell_name: &str) -> i32 {
         "fish" => Shell::Fish,
         "powershell" => Shell::PowerShell,
         _ => {
-            eprintln!("Unsupported shell '{}'. Supported: bash, zsh, fish, powershell", shell_name);
+            eprintln!(
+                "Unsupported shell '{}'. Supported: bash, zsh, fish, powershell",
+                shell_name
+            );
             return ApfelExitCodes::USAGE_ERROR;
         }
     };
@@ -97,13 +100,13 @@ fn run_model_info(engine: &dyn BackendEngine) -> i32 {
     let languages = engine.supported_languages().join(", ");
     let context = engine.context_size();
 
-    println!("apfel v0.1.0 — model info");
-    println!("├ model:      apple-foundationmodel");
+    println!("apfel v{} — model info", env!("CARGO_PKG_VERSION"));
+    println!("├ model:      {}", engine.model_name());
     println!("├ on-device:  true (always)");
     println!("├ available:  {}", available);
     println!("├ context:    {} tokens", context);
     println!("├ languages:  {}", languages);
-    println!("└ framework:  FoundationModels (macOS 26+)");
+    println!("└ framework:  {}", engine.framework_name());
 
     ApfelExitCodes::SUCCESS
 }
@@ -279,7 +282,10 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                 if !prompt_text.is_empty() {
                     prompt_text.push('\n');
                 }
-                prompt_text.push_str(&format!("--- File: {} ---\n{}\n--- End File ---", file_path, content));
+                prompt_text.push_str(&format!(
+                    "--- File: {} ---\n{}\n--- End File ---",
+                    file_path, content
+                ));
             }
             Err(e) => {
                 eprintln!("Error reading file '{}': {}", file_path, e);
@@ -376,7 +382,11 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
 
     let req = GenerateRequest {
         prompt: prompt_text,
-        system_prompt: if system_instructions.is_empty() { None } else { Some(system_instructions) },
+        system_prompt: if system_instructions.is_empty() {
+            None
+        } else {
+            Some(system_instructions)
+        },
         messages: messages.clone(),
         temperature: args.temperature,
         top_p: args.top_p,
@@ -420,9 +430,8 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             permissive: args.permissive,
         };
 
-        let active_messages = messages.unwrap_or_else(|| {
-            vec![crate::core::models::OpenAIMessage::user(&req.prompt)]
-        });
+        let active_messages =
+            messages.unwrap_or_else(|| vec![crate::core::models::OpenAIMessage::user(&req.prompt)]);
         let t_start = Instant::now();
         let res = match session_mgr
             .process_messages(
@@ -443,7 +452,6 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         };
 
-
         // Telemetry recording if requested
         if let Some(telemetry_path) = &args.telemetry {
             let record = serde_json::json!({
@@ -452,7 +460,11 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                 "finish_reason": res.finish_reason,
                 "output_bytes": res.content.len(),
             });
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(telemetry_path) {
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(telemetry_path)
+            {
                 let _ = writeln!(file, "{}", record);
             }
         }

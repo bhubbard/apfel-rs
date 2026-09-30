@@ -64,7 +64,9 @@ for line in sys.stdin:
         sys.stdout.write(json.dumps(resp) + "\n")
         sys.stdout.flush()
 "#;
-    script_file.write_all(script.as_bytes()).expect("Write failed");
+    script_file
+        .write_all(script.as_bytes())
+        .expect("Write failed");
     let script_path = script_file.path().to_str().unwrap().to_string();
 
     // Spawn MCPManager
@@ -75,7 +77,10 @@ for line in sys.stdin:
     let tools = manager.all_tools();
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].function.name, "greet");
-    assert_eq!(tools[0].function.description, Some("Say hello to someone".to_string()));
+    assert_eq!(
+        tools[0].function.description,
+        Some("Say hello to someone".to_string())
+    );
 
     // Call tool
     let call_res = manager

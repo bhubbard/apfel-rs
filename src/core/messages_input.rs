@@ -42,11 +42,60 @@ impl MessagesInput {
             match msg.role.as_str() {
                 "system" | "user" | "assistant" | "developer" | "tool" => (),
                 unknown => {
-                    return Err(ApfelError::Usage(format!("unknown message role: {}", unknown)));
+                    return Err(ApfelError::Usage(format!(
+                        "unknown message role: {}",
+                        unknown
+                    )));
                 }
             }
         }
 
         Ok(messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_valid_array() {
+        let json = r#"[{"role": "user", "content": "hello"}]"#;
+        let msgs = MessagesInput::decode(json).unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].role, "user");
+    }
+
+    #[test]
+    fn test_decode_valid_object_envelope() {
+        let json = r#"{"messages": [{"role": "assistant", "content": "hi"}]}"#;
+        let msgs = MessagesInput::decode(json).unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].role, "assistant");
+    }
+
+    #[test]
+    fn test_decode_empty_input() {
+        let err = MessagesInput::decode("   ").unwrap_err();
+        assert!(matches!(err, ApfelError::Usage(_)));
+    }
+
+    #[test]
+    fn test_decode_empty_array() {
+        let err = MessagesInput::decode("[]").unwrap_err();
+        assert!(matches!(err, ApfelError::Usage(_)));
+    }
+
+    #[test]
+    fn test_decode_invalid_json() {
+        let err = MessagesInput::decode("[{invalid}]").unwrap_err();
+        assert!(matches!(err, ApfelError::Usage(_)));
+    }
+
+    #[test]
+    fn test_decode_invalid_role() {
+        let json = r#"[{"role": "admin", "content": "hello"}]"#;
+        let err = MessagesInput::decode(json).unwrap_err();
+        assert!(matches!(err, ApfelError::Usage(_)));
     }
 }

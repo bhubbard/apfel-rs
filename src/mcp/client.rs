@@ -67,9 +67,12 @@ impl MCPConnection {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::null());
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| ApfelError::MCP(format!("Failed to spawn MCP server '{}': {}", command_path, e)))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            ApfelError::MCP(format!(
+                "Failed to spawn MCP server '{}': {}",
+                command_path, e
+            ))
+        })?;
 
         let stdin = child
             .stdin
@@ -126,7 +129,11 @@ impl MCPConnection {
         &self.tools
     }
 
-    pub async fn call_tool(&self, name: &str, arguments: &str) -> Result<(String, bool), ApfelError> {
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        arguments: &str,
+    ) -> Result<(String, bool), ApfelError> {
         MCPProtocol::validate_tool_arguments(name, arguments)?;
         let call_id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let req = MCPProtocol::tools_call_request(call_id, name, arguments);
@@ -171,9 +178,14 @@ impl MCPConnection {
         let read_future = reader.read_line(&mut line_buf);
 
         match timeout(self.timeout_duration, read_future).await {
-            Ok(Ok(0)) => Err(ApfelError::MCP("MCP server closed connection unexpectedly".to_string())),
+            Ok(Ok(0)) => Err(ApfelError::MCP(
+                "MCP server closed connection unexpectedly".to_string(),
+            )),
             Ok(Ok(_)) => Ok(line_buf.trim().to_string()),
-            Ok(Err(e)) => Err(ApfelError::MCP(format!("Read error from MCP server: {}", e))),
+            Ok(Err(e)) => Err(ApfelError::MCP(format!(
+                "Read error from MCP server: {}",
+                e
+            ))),
             Err(_) => Err(ApfelError::MCP(format!(
                 "MCP server timed out after {}s",
                 self.timeout_duration.as_secs()
@@ -197,7 +209,10 @@ pub struct MCPManager {
 }
 
 impl MCPManager {
-    pub async fn load_servers(server_paths: &[String], timeout_secs: u64) -> Result<Self, ApfelError> {
+    pub async fn load_servers(
+        server_paths: &[String],
+        timeout_secs: u64,
+    ) -> Result<Self, ApfelError> {
         let mut conns = Vec::new();
         for path in server_paths {
             let conn = MCPConnection::spawn(path, timeout_secs).await?;
@@ -214,7 +229,11 @@ impl MCPManager {
         out
     }
 
-    pub async fn call_tool(&self, name: &str, arguments: &str) -> Option<Result<(String, bool), ApfelError>> {
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        arguments: &str,
+    ) -> Option<Result<(String, bool), ApfelError>> {
         for conn in &self.connections {
             if conn.tools().iter().any(|t| t.function.name == name) {
                 return Some(conn.call_tool(name, arguments).await);

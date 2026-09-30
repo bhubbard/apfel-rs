@@ -35,7 +35,12 @@ pub(crate) async fn security_middleware(
             origin_str.unwrap_or_default()
         ));
         let body = serde_json::to_string(&err.to_openai_json()).unwrap_or_default();
-        return (StatusCode::FORBIDDEN, [("content-type", "application/json")], body).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            [("content-type", "application/json")],
+            body,
+        )
+            .into_response();
     }
 
     // 2. Token auth check
@@ -43,7 +48,12 @@ pub(crate) async fn security_middleware(
     if !OriginValidator::is_valid_token(auth_header, config.required_token.as_deref()) {
         let err = ApfelError::Unauthorized("Invalid or missing Bearer token".to_string());
         let body = serde_json::to_string(&err.to_openai_json()).unwrap_or_default();
-        return (StatusCode::UNAUTHORIZED, [("content-type", "application/json")], body).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            [("content-type", "application/json")],
+            body,
+        )
+            .into_response();
     }
 
     next.run(req).await

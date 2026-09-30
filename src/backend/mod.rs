@@ -32,3 +32,32 @@ pub fn default_engine() -> std::sync::Arc<dyn BackendEngine> {
         }
     }
 }
+
+/// Creates a backend engine by name, falling back to default if not specified.
+pub fn create_engine(
+    engine_name: Option<&str>,
+    model_name: Option<&str>,
+) -> std::sync::Arc<dyn BackendEngine> {
+    match engine_name {
+        Some("mlx") => {
+            let engine = if let Some(m) = model_name {
+                MlxBackendEngine::new(m)
+            } else {
+                MlxBackendEngine::default()
+            };
+            std::sync::Arc::new(engine)
+        }
+        Some("mock") => std::sync::Arc::new(MockEngine::new()),
+        Some("foundation") | Some("apple") => {
+            #[cfg(has_foundation_models)]
+            {
+                std::sync::Arc::new(FoundationModelsEngine::new())
+            }
+            #[cfg(not(has_foundation_models))]
+            {
+                std::sync::Arc::new(MockEngine::new())
+            }
+        }
+        _ => default_engine(),
+    }
+}

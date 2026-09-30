@@ -27,4 +27,6 @@ pub use schema::{PropertyIR, SchemaIR, SchemaParser};
 pub use security::{scrub_mcp_environment, OriginValidator};
 pub use stream_sink::StreamPrintSink;
 pub use token_counter::TokenCounter;
-pub use tool_call::{ParsedToolCall, StreamingToolCallGate, ToolCallHandler, ToolLogEntry, ToolOutputTruncator};
+pub use tool_call::{
+    ParsedToolCall, StreamingToolCallGate, ToolCallHandler, ToolLogEntry, ToolOutputTruncator,
+};

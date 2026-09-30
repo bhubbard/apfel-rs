@@ -49,6 +49,14 @@ pub trait BackendEngine: std::fmt::Debug + Send + Sync {
     fn count_tokens(&self, text: &str) -> usize;
     fn supported_languages(&self) -> Vec<String>;
 
+    fn model_name(&self) -> &str {
+        "apple-foundationmodel"
+    }
+
+    fn framework_name(&self) -> &str {
+        "FoundationModels (macOS 26+)"
+    }
+
     fn generate(&self, req: &GenerateRequest) -> Result<GenerateResponse, ApfelError>;
     fn stream_generate(
         &self,

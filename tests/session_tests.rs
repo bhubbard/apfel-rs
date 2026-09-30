@@ -2,8 +2,8 @@
 // tests/session_tests.rs — Unit tests for SessionManager pipeline
 // ============================================================================
 
-use apfel::backend::MockEngine;
 use apfel::backend::session::SessionManager;
+use apfel::backend::MockEngine;
 use apfel::core::context::ContextConfig;
 use apfel::core::models::{FunctionDefinition, OpenAIMessage, OpenAITool};
 use std::sync::Arc;
@@ -154,7 +154,9 @@ async fn test_session_manager_reprompt_cap() {
         apfel::core::error::ApfelError::ToolExecution(msg) => {
             assert!(msg.contains("round cap"));
         }
-        other => panic!("Expected ToolExecution error with round cap, got {:?}", other),
+        other => panic!(
+            "Expected ToolExecution error with round cap, got {:?}",
+            other
+        ),
     }
 }
-

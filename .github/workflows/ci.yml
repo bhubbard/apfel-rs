@@ -12,7 +12,10 @@ env:
 jobs:
   check:
     name: Check, Lint & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
     steps:
       - uses: actions/checkout@v7
 
@@ -31,4 +34,13 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Run Tests
+        if: matrix.os == 'macos-15'
         run: cargo test
+
+      - name: Install cargo-deny
+        if: matrix.os == 'macos-15'
+        run: cargo install cargo-deny --locked
+
+      - name: Cargo Deny Check
+        if: matrix.os == 'macos-15'
+        run: cargo deny check

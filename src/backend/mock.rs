@@ -69,7 +69,12 @@ impl BackendEngine for MockEngine {
     }
 
     fn supported_languages(&self) -> Vec<String> {
-        vec!["en".to_string(), "es".to_string(), "de".to_string(), "fr".to_string()]
+        vec![
+            "en".to_string(),
+            "es".to_string(),
+            "de".to_string(),
+            "fr".to_string(),
+        ]
     }
 
     fn stream_generate(
@@ -77,7 +82,9 @@ impl BackendEngine for MockEngine {
         _req: &GenerateRequest,
     ) -> Result<mpsc::Receiver<StreamChunk>, ApfelError> {
         if !self.available {
-            return Err(ApfelError::ModelUnavailable("Mock engine is unavailable".to_string()));
+            return Err(ApfelError::ModelUnavailable(
+                "Mock engine is unavailable".to_string(),
+            ));
         }
 
         let (tx, rx) = mpsc::channel(32);
@@ -97,7 +104,11 @@ impl BackendEngine for MockEngine {
                 let _ = tx.send(StreamChunk::Delta(format!("{} ", word))).await;
                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
             }
-            let _ = tx.send(StreamChunk::Done { finish_reason: "stop".to_string() }).await;
+            let _ = tx
+                .send(StreamChunk::Done {
+                    finish_reason: "stop".to_string(),
+                })
+                .await;
         });
 
         Ok(rx)
@@ -105,7 +116,9 @@ impl BackendEngine for MockEngine {
 
     fn generate(&self, _req: &GenerateRequest) -> Result<GenerateResponse, ApfelError> {
         if !self.available {
-            return Err(ApfelError::ModelUnavailable("Mock engine is unavailable".to_string()));
+            return Err(ApfelError::ModelUnavailable(
+                "Mock engine is unavailable".to_string(),
+            ));
         }
         let content = if let Ok(mut lock) = self.responses.lock() {
             if !lock.is_empty() {

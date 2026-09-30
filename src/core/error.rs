@@ -96,7 +96,10 @@ impl ApfelError {
             Self::RateLimited(_) => true,
             Self::ModelUnavailable(msg) => {
                 let lower = msg.to_lowercase();
-                lower.contains("busy") || lower.contains("concurrent") || lower.contains("assets") || lower.contains("temporarily")
+                lower.contains("busy")
+                    || lower.contains("concurrent")
+                    || lower.contains("assets")
+                    || lower.contains("temporarily")
             }
             _ => false,
         }

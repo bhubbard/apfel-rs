@@ -102,3 +102,58 @@ impl Default for TokenCounter {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_observe_context_size() {
+        let counter = TokenCounter::new();
+        assert_eq!(counter.context_size(), TokenCounter::DEFAULT_CONTEXT_FLOOR);
+
+        counter.observe_context_size(8192);
+        assert_eq!(counter.context_size(), 8192);
+
+        counter.observe_context_size(2048);
+        assert_eq!(counter.context_size(), 8192);
+    }
+
+    #[test]
+    fn test_input_budget() {
+        let counter = TokenCounter::new();
+        assert_eq!(
+            counter.input_budget(1000),
+            TokenCounter::DEFAULT_CONTEXT_FLOOR - 1000
+        );
+    }
+
+    #[test]
+    fn test_count_cached() {
+        let counter = TokenCounter::new();
+        let compute_fn = |s: &str| s.len() * 2;
+
+        let count1 = counter.count_cached("hello", compute_fn);
+        assert_eq!(count1, 10);
+
+        // Cache should hit
+        let count2 = counter.count_cached("hello", |_| 999);
+        assert_eq!(count2, 10);
+
+        // Empty string
+        assert_eq!(counter.count_cached("", |_| 999), 0);
+    }
+
+    #[test]
+    fn test_fallback_count() {
+        let counter = TokenCounter::new();
+        assert!(!counter.did_fallback());
+
+        let count = counter.fallback_count("12345678");
+        assert_eq!(count, 2);
+        assert!(counter.did_fallback());
+
+        counter.reset_fallback_flag();
+        assert!(!counter.did_fallback());
+    }
+}

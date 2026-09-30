@@ -30,10 +30,14 @@ fn test_mcp_parse_tools_list() {
         }
     }"#;
 
-    let tools = MCPProtocol::parse_tools_list_response(resp_json).expect("Failed to parse tools list");
+    let tools =
+        MCPProtocol::parse_tools_list_response(resp_json).expect("Failed to parse tools list");
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].function.name, "calc");
-    assert_eq!(tools[0].function.description, Some("Evaluate math".to_string()));
+    assert_eq!(
+        tools[0].function.description,
+        Some("Evaluate math".to_string())
+    );
 
     // Error on missing tools key
     assert!(MCPProtocol::parse_tools_list_response(r#"{"result":{}}"#).is_err());
@@ -74,7 +78,8 @@ fn test_mcp_parse_initialize_response() {
         }
     }"#;
 
-    let info = MCPProtocol::parse_initialize_response(init_json).expect("Failed to parse init response");
+    let info =
+        MCPProtocol::parse_initialize_response(init_json).expect("Failed to parse init response");
     assert_eq!(info.name, "sqlite-server");
     assert_eq!(info.version, "1.2.3");
 
@@ -96,7 +101,8 @@ fn test_mcp_parse_tools_call_response() {
             "isError": false
         }
     }"#;
-    let (text, is_err) = MCPProtocol::parse_tools_call_response(success_json).expect("Parse failed");
+    let (text, is_err) =
+        MCPProtocol::parse_tools_call_response(success_json).expect("Parse failed");
     assert_eq!(text, "Computed result: 42");
     assert!(!is_err);
 
@@ -110,7 +116,8 @@ fn test_mcp_parse_tools_call_response() {
             "isError": true
         }
     }"#;
-    let (err_text, is_err) = MCPProtocol::parse_tools_call_response(tool_err_json).expect("Parse failed");
+    let (err_text, is_err) =
+        MCPProtocol::parse_tools_call_response(tool_err_json).expect("Parse failed");
     assert_eq!(err_text, "Division by zero");
     assert!(is_err);
 
@@ -122,7 +129,8 @@ fn test_mcp_parse_tools_call_response() {
             "message": "Tool not found"
         }
     }"#;
-    let (err_msg, is_err) = MCPProtocol::parse_tools_call_response(protocol_err_json).expect("Parse failed");
+    let (err_msg, is_err) =
+        MCPProtocol::parse_tools_call_response(protocol_err_json).expect("Parse failed");
     assert_eq!(err_msg, "Error: Tool not found");
     assert!(is_err);
 

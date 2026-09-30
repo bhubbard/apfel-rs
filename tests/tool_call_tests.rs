@@ -26,7 +26,8 @@ fn test_detect_tool_call_json() {
 fn test_detect_tool_call_in_code_fences() {
     let fenced_resp = "Here is the calculation:\n```json\n{\n  \"tool_calls\": [\n    {\n      \"id\": \"call_abc\",\n      \"type\": \"function\",\n      \"function\": {\n        \"name\": \"get_weather\",\n        \"arguments\": \"{\\\"city\\\": \\\"San Francisco\\\"}\"\n      }\n    }\n  ]\n}\n```";
 
-    let calls = ToolCallHandler::detect_tool_call(fenced_resp).expect("Expected tool calls from fence");
+    let calls =
+        ToolCallHandler::detect_tool_call(fenced_resp).expect("Expected tool calls from fence");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].name, "get_weather");
 }

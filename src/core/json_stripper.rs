@@ -33,3 +33,50 @@ impl JSONFenceStripper {
         inner[..last_fence].trim()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_valid_json_fence() {
+        let input = "```json\n{\"key\": \"value\"}\n```";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, "{\"key\": \"value\"}");
+    }
+
+    #[test]
+    fn test_strip_no_fence() {
+        let input = "{\"key\": \"value\"}";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_strip_whitespace_only() {
+        let input = "   \n  ";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, "");
+    }
+
+    #[test]
+    fn test_strip_different_language() {
+        let input = "```python\nprint('hello')\n```";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_strip_nested_fences() {
+        let input = "```json\n{\n  \"code\": \"```python\\npass\\n```\"\n}\n```";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, "{\n  \"code\": \"```python\\npass\\n```\"\n}");
+    }
+
+    #[test]
+    fn test_strip_malformed_fence() {
+        let input = "```json\n{\"key\": \"value\"}";
+        let output = JSONFenceStripper::strip(input);
+        assert_eq!(output, input);
+    }
+}

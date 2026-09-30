@@ -15,7 +15,11 @@ fn test_schema_parser_basic_object() {
 
     let ir = SchemaParser::parse(schema_json, "UserProfile").expect("Failed to parse schema");
     match ir {
-        SchemaIR::Object { name, description, properties } => {
+        SchemaIR::Object {
+            name,
+            description,
+            properties,
+        } => {
             assert_eq!(name, "UserProfile");
             assert_eq!(description, Some("User profile".to_string()));
             assert_eq!(properties.len(), 3);
@@ -64,7 +68,10 @@ fn test_schema_parser_nullable_normalization() {
 fn test_deeply_nested_schema_rejected() {
     let mut schema = String::from(r#"{"type":"string"}"#);
     for _ in 0..70 {
-        schema = format!(r#"{{"type":"object","properties":{{"nested":{}}}}}"#, schema);
+        schema = format!(
+            r#"{{"type":"object","properties":{{"nested":{}}}}}"#,
+            schema
+        );
     }
     let res = SchemaParser::parse(&schema, "Deep");
     assert!(res.is_err());
@@ -137,7 +144,8 @@ fn test_schema_parser_invalid_root_and_properties() {
     assert!(SchemaParser::parse(bad_arr, "BadArray").is_err());
 
     // Array items not object rejected
-    let bad_items = r#"{"type": "object", "properties": {"list": {"type": "array", "items": "string"}}}"#;
+    let bad_items =
+        r#"{"type": "object", "properties": {"list": {"type": "array", "items": "string"}}}"#;
     assert!(SchemaParser::parse(bad_items, "BadItems").is_err());
 
     // Unsupported schema type rejected
@@ -201,4 +209,3 @@ fn test_schema_parser_unions_and_number() {
         panic!("Expected Object");
     }
 }
-

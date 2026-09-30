@@ -26,7 +26,8 @@ fn test_chat_completion_request_serialization() {
     };
 
     let json = serde_json::to_string(&req).expect("Failed to serialize request");
-    let deserialized: ChatCompletionRequest = serde_json::from_str(&json).expect("Failed to deserialize request");
+    let deserialized: ChatCompletionRequest =
+        serde_json::from_str(&json).expect("Failed to deserialize request");
 
     assert_eq!(req.model, deserialized.model);
     assert_eq!(req.messages.len(), 2);
@@ -41,8 +42,12 @@ fn test_message_content_helpers() {
     let msg2 = OpenAIMessage {
         role: "user".to_string(),
         content: Some(MessageContent::Parts(vec![
-            ContentPart::Text { text: "Line 1".to_string() },
-            ContentPart::Text { text: "Line 2".to_string() },
+            ContentPart::Text {
+                text: "Line 1".to_string(),
+            },
+            ContentPart::Text {
+                text: "Line 2".to_string(),
+            },
         ])),
         name: None,
         tool_call_id: None,
@@ -153,23 +158,30 @@ fn test_tool_choice_parsing_and_modes() {
     // Mode: "none"
     let json_none = r#"{"model":"m","messages":[],"tool_choice":"none"}"#;
     let req_none: ChatCompletionRequest = serde_json::from_str(json_none).unwrap();
-    assert_eq!(req_none.tool_choice, Some(ToolChoice::Mode("none".to_string())));
+    assert_eq!(
+        req_none.tool_choice,
+        Some(ToolChoice::Mode("none".to_string()))
+    );
 
     // Mode: "auto"
     let json_auto = r#"{"model":"m","messages":[],"tool_choice":"auto"}"#;
     let req_auto: ChatCompletionRequest = serde_json::from_str(json_auto).unwrap();
-    assert_eq!(req_auto.tool_choice, Some(ToolChoice::Mode("auto".to_string())));
+    assert_eq!(
+        req_auto.tool_choice,
+        Some(ToolChoice::Mode("auto".to_string()))
+    );
 
     // Named function choice
     let json_named = r#"{"model":"m","messages":[],"tool_choice":{"type":"function","function":{"name":"fetch_weather"}}}"#;
     let req_named: ChatCompletionRequest = serde_json::from_str(json_named).unwrap();
     match req_named.tool_choice {
-        Some(ToolChoice::Named { choice_type, function }) => {
+        Some(ToolChoice::Named {
+            choice_type,
+            function,
+        }) => {
             assert_eq!(choice_type, "function");
             assert_eq!(function.name, "fetch_weather");
         }
         _ => panic!("Expected Named tool choice"),
     }
 }
-
-

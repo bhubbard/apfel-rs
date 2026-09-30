@@ -28,7 +28,10 @@ pub struct SessionResult {
 
 impl SessionManager {
     pub fn new(engine: Arc<dyn BackendEngine>, mcp_manager: Option<Arc<MCPManager>>) -> Self {
-        Self { engine, mcp_manager }
+        Self {
+            engine,
+            mcp_manager,
+        }
     }
 
     pub async fn process_messages(
@@ -46,12 +49,9 @@ impl SessionManager {
             .context_size()
             .saturating_sub(config.output_reserve);
 
-        let trimmed_messages = ContextManager::trim_messages(
-            messages,
-            budget,
-            config,
-            |t| self.engine.count_tokens(t),
-        )
+        let trimmed_messages = ContextManager::trim_messages(messages, budget, config, |t| {
+            self.engine.count_tokens(t)
+        })
         .ok_or_else(|| {
             ApfelError::ContextOverflow("Messages exceed context budget after trimming".to_string())
         })?;
@@ -104,7 +104,11 @@ impl SessionManager {
 
             let gen_req = GenerateRequest {
                 prompt: last_user_prompt.clone(),
-                system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
+                system_prompt: if system_prompt.is_empty() {
+                    None
+                } else {
+                    Some(system_prompt)
+                },
                 messages: Some(current_messages.clone()),
                 temperature,
                 top_p,
@@ -129,13 +133,18 @@ impl SessionManager {
 
                 for call in &calls {
                     let (res, is_err) = if let Some(mcp) = &self.mcp_manager {
-                        if let Some(exec_res) = mcp.call_tool(&call.name, &call.arguments_string).await {
+                        if let Some(exec_res) =
+                            mcp.call_tool(&call.name, &call.arguments_string).await
+                        {
                             exec_res?
                         } else {
                             (format!("Tool '{}' not found", call.name), true)
                         }
                     } else {
-                        (format!("No tool handler registered for '{}'", call.name), true)
+                        (
+                            format!("No tool handler registered for '{}'", call.name),
+                            true,
+                        )
                     };
 
                     aggregated_log.push(ToolLogEntry {

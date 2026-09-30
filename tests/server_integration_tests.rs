@@ -86,8 +86,12 @@ async fn test_server_routes_and_security() {
         .expect("Chat completion failed");
 
     assert_eq!(res.status(), 200);
-    let chat_resp: ChatCompletionResponse = res.json().await.expect("Failed to deserialize response");
-    assert_eq!(chat_resp.choices[0].message.text_content(), "Hello from mock server!");
+    let chat_resp: ChatCompletionResponse =
+        res.json().await.expect("Failed to deserialize response");
+    assert_eq!(
+        chat_resp.choices[0].message.text_content(),
+        "Hello from mock server!"
+    );
 
     // 6. Stop sequence in non-streaming POST
     let stop_body = serde_json::json!({
@@ -151,7 +155,11 @@ async fn test_server_routes_and_security() {
     assert_eq!(res.status(), 200);
     let models_body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(models_body["object"], "list");
-    assert!(models_body["data"].as_array().unwrap().iter().any(|m| m["id"] == "apple-foundationmodel"));
+    assert!(models_body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["id"] == "apple-foundationmodel"));
 
     // 10. OpenAI responses endpoint POST /v1/responses
     let responses_body = serde_json::json!({
@@ -283,4 +291,3 @@ async fn test_server_routes_and_security() {
     assert!(stream_stop_text.contains("chat.completion.chunk"));
     assert!(stream_stop_text.contains("[DONE]"));
 }
-

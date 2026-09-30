@@ -1,5 +1,5 @@
-use apfel::backend::mlx_engine::MlxBackendEngine;
 use apfel::backend::engine::{BackendEngine, GenerateRequest};
+use apfel::backend::mlx_engine::MlxBackendEngine;
 use apfel::core::models::{EmbeddingInput, EmbeddingRequest};
 
 #[test]
@@ -26,7 +26,10 @@ fn test_embedding_input_conversions() {
     assert_eq!(single.to_vec(), vec!["hello world".to_string()]);
 
     let multiple = EmbeddingInput::Array(vec!["query 1".into(), "query 2".into()]);
-    assert_eq!(multiple.to_vec(), vec!["query 1".to_string(), "query 2".to_string()]);
+    assert_eq!(
+        multiple.to_vec(),
+        vec!["query 1".to_string(), "query 2".to_string()]
+    );
 
     let req = EmbeddingRequest {
         model: "mlx-embedding".into(),

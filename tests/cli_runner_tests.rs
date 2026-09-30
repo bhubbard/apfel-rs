@@ -36,11 +36,22 @@ async fn test_cli_runner_count_tokens() {
     assert_eq!(run_cli(args).await, ApfelExitCodes::SUCCESS);
 
     // JSON output format
-    let args_json = CliArgs::parse_from(&["apfel", "--count-tokens", "-o", "json", "Test json token counting"]);
+    let args_json = CliArgs::parse_from(&[
+        "apfel",
+        "--count-tokens",
+        "-o",
+        "json",
+        "Test json token counting",
+    ]);
     assert_eq!(run_cli(args_json).await, ApfelExitCodes::SUCCESS);
 
     // Missing file attachment fails with usage error
-    let args_file = CliArgs::parse_from(&["apfel", "--count-tokens", "-f", "/nonexistent/file/path/that/does/not/exist.txt"]);
+    let args_file = CliArgs::parse_from(&[
+        "apfel",
+        "--count-tokens",
+        "-f",
+        "/nonexistent/file/path/that/does/not/exist.txt",
+    ]);
     assert_eq!(run_cli(args_file).await, ApfelExitCodes::USAGE_ERROR);
 }
 
@@ -82,39 +93,82 @@ async fn test_cli_runner_generation_mock_engine() {
 
     // Generation with prompt
     let args = CliArgs::parse_from(&["apfel", "--no-stream", "Write code"]);
-    assert_eq!(run_cli_with_engine(args, mock.clone()).await, ApfelExitCodes::SUCCESS);
-
+    assert_eq!(
+        run_cli_with_engine(args, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
 
     // Generation with JSON output
     let args_json = CliArgs::parse_from(&["apfel", "-o", "json", "--no-stream", "Generate json"]);
-    assert_eq!(run_cli_with_engine(args_json, mock.clone()).await, ApfelExitCodes::SUCCESS);
+    assert_eq!(
+        run_cli_with_engine(args_json, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
 
     // Generation with missing prompt fails with USAGE_ERROR
     let args_no_prompt = CliArgs::parse_from(&["apfel", "--no-stream"]);
-    assert_eq!(run_cli_with_engine(args_no_prompt, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+    assert_eq!(
+        run_cli_with_engine(args_no_prompt, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
 
     // Generation with non-existent file fails with USAGE_ERROR
-    let args_bad_file = CliArgs::parse_from(&["apfel", "-f", "/path/to/invalid/file.txt", "prompt"]);
-    assert_eq!(run_cli_with_engine(args_bad_file, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+    let args_bad_file =
+        CliArgs::parse_from(&["apfel", "-f", "/path/to/invalid/file.txt", "prompt"]);
+    assert_eq!(
+        run_cli_with_engine(args_bad_file, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
 
     // Generation with valid file
     let dir = tempfile::tempdir().unwrap();
     let sample_file = dir.path().join("context.txt");
     std::fs::write(&sample_file, "Contextual file data").unwrap();
-    let args_good_file = CliArgs::parse_from(&["apfel", "-f", sample_file.to_str().unwrap(), "--no-stream", "prompt"]);
-    assert_eq!(run_cli_with_engine(args_good_file, mock.clone()).await, ApfelExitCodes::SUCCESS);
+    let args_good_file = CliArgs::parse_from(&[
+        "apfel",
+        "-f",
+        sample_file.to_str().unwrap(),
+        "--no-stream",
+        "prompt",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_good_file, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
 
     // Generation with valid schema file
     let schema_file = dir.path().join("schema.json");
-    std::fs::write(&schema_file, r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#).unwrap();
-    let args_schema = CliArgs::parse_from(&["apfel", "--schema", schema_file.to_str().unwrap(), "--no-stream", "prompt"]);
-    assert_eq!(run_cli_with_engine(args_schema, mock.clone()).await, ApfelExitCodes::SUCCESS);
+    std::fs::write(
+        &schema_file,
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
+    )
+    .unwrap();
+    let args_schema = CliArgs::parse_from(&[
+        "apfel",
+        "--schema",
+        schema_file.to_str().unwrap(),
+        "--no-stream",
+        "prompt",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_schema, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
 
     // Generation with invalid schema file
     let bad_schema_file = dir.path().join("bad_schema.json");
     std::fs::write(&bad_schema_file, r#"{ invalid json }"#).unwrap();
-    let args_bad_schema = CliArgs::parse_from(&["apfel", "--schema", bad_schema_file.to_str().unwrap(), "--no-stream", "prompt"]);
-    assert_eq!(run_cli_with_engine(args_bad_schema, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+    let args_bad_schema = CliArgs::parse_from(&[
+        "apfel",
+        "--schema",
+        bad_schema_file.to_str().unwrap(),
+        "--no-stream",
+        "prompt",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_bad_schema, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
 }
 
 #[tokio::test]
@@ -122,7 +176,10 @@ async fn test_cli_runner_count_tokens_strict_overflow() {
     let mock = Arc::new(MockEngine::new());
     let huge_prompt = "a".repeat(20000);
     let args = CliArgs::parse_from(&["apfel", "--count-tokens", "--strict", &huge_prompt]);
-    assert_eq!(run_cli_with_engine(args, mock).await, ApfelExitCodes::CONTEXT_OVERFLOW);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::CONTEXT_OVERFLOW
+    );
 }
 
 #[tokio::test]
@@ -132,17 +189,49 @@ async fn test_cli_runner_messages_flag() {
 
     // Valid messages JSON array
     let msg_file = dir.path().join("messages.json");
-    std::fs::write(&msg_file, r#"[{"role": "user", "content": "Hello from file"}]"#).unwrap();
-    let args_good = CliArgs::parse_from(&["apfel", "--messages", msg_file.to_str().unwrap(), "--no-stream"]);
-    assert_eq!(run_cli_with_engine(args_good, mock.clone()).await, ApfelExitCodes::SUCCESS);
+    std::fs::write(
+        &msg_file,
+        r#"[{"role": "user", "content": "Hello from file"}]"#,
+    )
+    .unwrap();
+    let args_good = CliArgs::parse_from(&[
+        "apfel",
+        "--messages",
+        msg_file.to_str().unwrap(),
+        "--no-stream",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_good, mock.clone()).await,
+        ApfelExitCodes::SUCCESS
+    );
 
     // Missing messages file
-    let args_missing = CliArgs::parse_from(&["apfel", "--messages", "/nonexistent/messages.json", "--no-stream"]);
-    assert_eq!(run_cli_with_engine(args_missing, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+    let args_missing = CliArgs::parse_from(&[
+        "apfel",
+        "--messages",
+        "/nonexistent/messages.json",
+        "--no-stream",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_missing, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
 
     // Corrupt messages file
     let bad_msg_file = dir.path().join("bad_messages.json");
-    std::fs::write(&bad_msg_file, r#"[{"role": "unknown_role", "content": "Hello"}]"#).unwrap();
-    let args_bad = CliArgs::parse_from(&["apfel", "--messages", bad_msg_file.to_str().unwrap(), "--no-stream"]);
-    assert_eq!(run_cli_with_engine(args_bad, mock.clone()).await, ApfelExitCodes::USAGE_ERROR);
+    std::fs::write(
+        &bad_msg_file,
+        r#"[{"role": "unknown_role", "content": "Hello"}]"#,
+    )
+    .unwrap();
+    let args_bad = CliArgs::parse_from(&[
+        "apfel",
+        "--messages",
+        bad_msg_file.to_str().unwrap(),
+        "--no-stream",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args_bad, mock.clone()).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
 }

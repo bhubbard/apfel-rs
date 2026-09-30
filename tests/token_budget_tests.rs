@@ -78,6 +78,9 @@ fn test_token_counter_throughput_benchmark() {
     }
     let duration = start.elapsed();
     // 10,000 lookups should take well under 100ms with u64 hash lookups
-    assert!(duration.as_millis() < 100, "10k hash cache lookups took {:?}", duration);
+    assert!(
+        duration.as_millis() < 100,
+        "10k hash cache lookups took {:?}",
+        duration
+    );
 }
-

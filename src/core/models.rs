@@ -62,9 +62,10 @@ impl ChatCompletionRequest {
     pub fn validate_max_tokens(&self) -> Result<Option<usize>, crate::core::error::ApfelError> {
         if let (Some(legacy), Some(modern)) = (self.max_tokens, self.max_completion_tokens) {
             if legacy != modern {
-                return Err(crate::core::error::ApfelError::Usage(
-                    format!("Conflicting max_tokens ({}) and max_completion_tokens ({})", legacy, modern)
-                ));
+                return Err(crate::core::error::ApfelError::Usage(format!(
+                    "Conflicting max_tokens ({}) and max_completion_tokens ({})",
+                    legacy, modern
+                )));
             }
         }
         Ok(self.effective_max_tokens())
@@ -134,7 +135,11 @@ impl OpenAIMessage {
         }
     }
 
-    pub fn tool(content: impl Into<String>, tool_call_id: impl Into<String>, name: Option<String>) -> Self {
+    pub fn tool(
+        content: impl Into<String>,
+        tool_call_id: impl Into<String>,
+        name: Option<String>,
+    ) -> Self {
         Self {
             role: "tool".to_string(),
             content: Some(MessageContent::Text(content.into())),
@@ -147,15 +152,14 @@ impl OpenAIMessage {
     pub fn text_content(&self) -> String {
         match &self.content {
             Some(MessageContent::Text(t)) => t.clone(),
-            Some(MessageContent::Parts(parts)) => {
-                parts.iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            }
+            Some(MessageContent::Parts(parts)) => parts
+                .iter()
+                .filter_map(|p| match p {
+                    ContentPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
             None => String::new(),
         }
     }
