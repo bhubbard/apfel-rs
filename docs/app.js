@@ -78,15 +78,15 @@ const TERMINAL_SAMPLES = {
 `,
   bench: `
 <span class="t-prompt">$</span> <span class="t-cmd">apfel --benchmark</span>
-<span class="t-meta">Benchmarking on-device FoundationModels via native Rust bridge...</span>
+<span class="t-meta">Benchmarking on-device FoundationModels &amp; MLX via native Rust bridge...</span>
 
-<span class="t-out">Warmup            : 5 runs completed</span>
-<span class="t-out">Token Counting    : 68.35 ms mean (jitter p99: 91.6 ms)</span>
-<span class="t-out">HTTP RPS (Axum)   : 4,160.2 req/sec (p95 latency: 9.85 ms)</span>
-<span class="t-out">Inference Speed   : 56.4 tokens/sec</span>
-<span class="t-out">RSS Memory (Idle) : 10.1 MB</span>
+<span class="t-out">Warmup            : 5 runs completed (QoS: USER_INITIATED)</span>
+<span class="t-out">Token Counting    : 6.35 ms (MLX) | 95.00 ms (Foundation)</span>
+<span class="t-out">HTTP RPS (Axum)   : 8,363 req/sec (Foundation) | 50,779 req/sec (MLX)</span>
+<span class="t-out">Latency (p50/p95) : 0.13 ms / 0.64 ms (TCP_NODELAY enabled)</span>
+<span class="t-out">RSS Memory (Idle) : 10.1 MB (11.3 MB active load)</span>
 
-<span class="t-success">✔ Benchmark complete. Zero C-bridge overhead verified.</span>
+<span class="t-success">✔ Benchmark complete. Apple Silicon P-core prioritization verified.</span>
 `
 };
 

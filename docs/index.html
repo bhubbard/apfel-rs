@@ -987,7 +987,7 @@
           <div class="bench-card">
             <div class="bench-card-head">
               <span class="bench-metric-name">Release Binary Size</span>
-              <span class="bench-badge">88.0% Smaller</span>
+              <span class="bench-badge">88.9% Smaller</span>
             </div>
             <div class="bench-bar-container">
               <div class="bench-row">
@@ -1002,16 +1002,16 @@
               <div class="bench-row">
                 <div class="bench-labels">
                   <span class="bench-impl">Rust (apfel-rs)</span>
-                  <span class="bench-num" style="color: #34d399;">2.50 MB</span>
+                  <span class="bench-num" style="color: #34d399;">2.30 MB</span>
                 </div>
                 <div class="bench-track">
-                  <div class="bench-fill-rust" style="width: 12%;"></div>
+                  <div class="bench-fill-rust" style="width: 11.1%;"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Metric 2: Idle RAM -->
+          <!-- Metric 2: Idle & Active RAM -->
           <div class="bench-card">
             <div class="bench-card-head">
               <span class="bench-metric-name">Server Idle RAM (RSS)</span>
@@ -1042,23 +1042,23 @@
           <!-- Metric 3: Throughput -->
           <div class="bench-card">
             <div class="bench-card-head">
-              <span class="bench-metric-name">Server Throughput (RPS)</span>
-              <span class="bench-badge">3.76x Higher</span>
+              <span class="bench-metric-name">Server Concurrency (RPS)</span>
+              <span class="bench-badge">Up to 50k req/s</span>
             </div>
             <div class="bench-bar-container">
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Swift (apfel)</span>
-                  <span class="bench-num">1,106 req/s</span>
+                  <span class="bench-impl">Swift (Hummingbird)</span>
+                  <span class="bench-num">12,156 req/s</span>
                 </div>
                 <div class="bench-track">
-                  <div class="bench-fill-swift" style="width: 26.6%;"></div>
+                  <div class="bench-fill-swift" style="width: 24%;"></div>
                 </div>
               </div>
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Rust (apfel-rs)</span>
-                  <span class="bench-num" style="color: #34d399;">4,160 req/s</span>
+                  <span class="bench-impl">Rust (Default / MLX)</span>
+                  <span class="bench-num" style="color: #34d399;">8.3k &ndash; 50.7k req/s</span>
                 </div>
                 <div class="bench-track">
                   <div class="bench-fill-rust" style="width: 100%;"></div>
@@ -1070,14 +1070,14 @@
           <!-- Metric 4: Tail Latency -->
           <div class="bench-card">
             <div class="bench-card-head">
-              <span class="bench-metric-name">Server Tail Latency (p95)</span>
-              <span class="bench-badge">4.58x Lower Latency</span>
+              <span class="bench-metric-name">Server Latency (p50 / p95)</span>
+              <span class="bench-badge">Sub-millisecond</span>
             </div>
             <div class="bench-bar-container">
               <div class="bench-row">
                 <div class="bench-labels">
                   <span class="bench-impl">Swift (apfel)</span>
-                  <span class="bench-num">45.11 ms</span>
+                  <span class="bench-num">0.25 ms (p50)</span>
                 </div>
                 <div class="bench-track">
                   <div class="bench-fill-swift" style="width: 100%;"></div>
@@ -1085,11 +1085,11 @@
               </div>
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Rust (apfel-rs)</span>
-                  <span class="bench-num" style="color: #34d399;">9.85 ms</span>
+                  <span class="bench-impl">Rust (TCP_NODELAY)</span>
+                  <span class="bench-num" style="color: #34d399;">0.13 &ndash; 0.15 ms</span>
                 </div>
                 <div class="bench-track">
-                  <div class="bench-fill-rust" style="width: 21.8%;"></div>
+                  <div class="bench-fill-rust" style="width: 52%;"></div>
                 </div>
               </div>
             </div>
@@ -1098,14 +1098,14 @@
           <!-- Metric 5: Token Jitter -->
           <div class="bench-card">
             <div class="bench-card-head">
-              <span class="bench-metric-name">Token Counting Max Jitter</span>
-              <span class="bench-badge">8.17x Stability</span>
+              <span class="bench-metric-name">Token Counting Under Load</span>
+              <span class="bench-badge">Zero ARC Stalls</span>
             </div>
             <div class="bench-bar-container">
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Swift (apfel)</span>
-                  <span class="bench-num">748.19 ms</span>
+                  <span class="bench-impl">Swift (Max Jitter)</span>
+                  <span class="bench-num">22,773 ms</span>
                 </div>
                 <div class="bench-track">
                   <div class="bench-fill-swift" style="width: 100%;"></div>
@@ -1114,26 +1114,26 @@
               <div class="bench-row">
                 <div class="bench-labels">
                   <span class="bench-impl">Rust (apfel-rs)</span>
-                  <span class="bench-num" style="color: #34d399;">91.60 ms</span>
+                  <span class="bench-num" style="color: #34d399;">6.35 &ndash; 95 ms</span>
                 </div>
                 <div class="bench-track">
-                  <div class="bench-fill-rust" style="width: 12.2%;"></div>
+                  <div class="bench-fill-rust" style="width: 3.2%;"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Metric 6: C-Bridge Overhead -->
+          <!-- Metric 6: Thread QoS -->
           <div class="bench-card">
             <div class="bench-card-head">
               <span class="bench-metric-name">Inference Generation</span>
-              <span class="bench-badge">Zero C-Bridge Penalty</span>
+              <span class="bench-badge">Apple Silicon P-Core Priority</span>
             </div>
             <div class="bench-bar-container">
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Swift (apfel)</span>
-                  <span class="bench-num">57.3 tok/s</span>
+                  <span class="bench-impl">Swift (Default Thread)</span>
+                  <span class="bench-num">~35.9 tok/s</span>
                 </div>
                 <div class="bench-track">
                   <div class="bench-fill-swift" style="width: 100%;"></div>
@@ -1141,11 +1141,11 @@
               </div>
               <div class="bench-row">
                 <div class="bench-labels">
-                  <span class="bench-impl">Rust (apfel-rs)</span>
-                  <span class="bench-num" style="color: #34d399;">55.9 tok/s</span>
+                  <span class="bench-impl">Rust (Thread QoS Elevated)</span>
+                  <span class="bench-num" style="color: #34d399;">~34.4 tok/s</span>
                 </div>
                 <div class="bench-track">
-                  <div class="bench-fill-rust" style="width: 97.5%;"></div>
+                  <div class="bench-fill-rust" style="width: 96%;"></div>
                 </div>
               </div>
             </div>
