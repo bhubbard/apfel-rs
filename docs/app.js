@@ -45,6 +45,18 @@ const TERMINAL_SAMPLES = {
 
 <span class="t-success">✔ 18 tokens generated in 0.31s (58.1 tok/sec)</span>
 `,
+  mlx: `
+<span class="t-prompt">$</span> <span class="t-cmd">apfel --engine mlx -m mlx-community/Qwen2.5-Coder-7B-Instruct-4bit --stream "Write an async worker in Rust"</span>
+<span class="t-meta">[MLX Engine | Metal GPU &amp; Unified Memory | Context: 32,768 tokens]</span>
+
+<span class="t-out">use tokio::sync::mpsc;</span>
+<span class="t-out"></span>
+<span class="t-out">pub struct WorkerPool {</span>
+<span class="t-out">    sender: mpsc::Sender&lt;Task&gt;,</span>
+<span class="t-out">}</span>
+
+<span class="t-success">✔ 128 tokens generated in 1.94s (66.0 tok/sec) &bull; Context: 32k tokens</span>
+`,
   chat: `
 <span class="t-prompt">$</span> <span class="t-cmd">apfel --chat</span>
 <span class="t-cyan">apfel interactive session (model: apple-foundationmodel, context: 4096 tokens)</span>
@@ -110,6 +122,9 @@ function initTerminalTabs() {
 // API Explorer Code Snippets
 const API_CODE_SAMPLES = {
   curl: `# POST /v1/chat/completions with SSE Streaming
+# Models supported:
+#   - "apple-foundationmodel" (Default Apple Intelligence, 0 MB download)
+#   - "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit" (MLX Engine, 32k context)
 curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -130,6 +145,7 @@ client = OpenAI(
     api_key="not-needed"
 )
 
+# Choose "apple-foundationmodel" (default) or any MLX model (e.g. Qwen, Llama 3)
 response = client.chat.completions.create(
     model="apple-foundationmodel",
     messages=[
@@ -183,7 +199,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{res}");
     Ok(())
-}`
+}`,
+
+  mlx: `# Serving MLX models (e.g. Qwen 2.5 Coder, Llama 3) via OpenAI API
+# 1. Start daemon with MLX engine:
+#    apfel --engine mlx -m mlx-community/Qwen2.5-Coder-7B-Instruct-4bit --serve --port 8080
+
+# 2. Query with standard OpenAI format:
+curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+    "stream": true,
+    "temperature": 0.2,
+    "messages": [
+      {"role": "system", "content": "You are an expert systems programmer."},
+      {"role": "user", "content": "Write a zero-copy circular ring buffer in Rust."}
+    ]
+  }'`
 };
 
 function initApiExplorer() {
