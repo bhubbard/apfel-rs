@@ -21,10 +21,13 @@ pub mod tool_call;
 pub use code_cropper::{extract_code, ExtractedCode};
 pub use context::{ContextConfig, ContextManager, ContextStrategy};
 pub use error::{ApfelError, ApfelExitCodes, OpenAIErrorDetail, OpenAIErrorWrapper};
-pub use file_framing::FileFraming;
+pub use file_framing::{frame_document, frame_image, FileFraming};
 pub use json_stripper::JSONFenceStripper;
 pub use messages_input::MessagesInput;
 pub use models::*;
+pub mod openai_models {
+    pub use crate::core::models::*;
+}
 pub use responses_models::*;
 pub use schema::{PropertyIR, SchemaIR, SchemaParser};
 pub use security::{scrub_mcp_environment, OriginValidator};

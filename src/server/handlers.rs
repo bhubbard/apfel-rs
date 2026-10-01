@@ -687,6 +687,32 @@ pub(crate) async fn embeddings_handler(
     Json(resp).into_response()
 }
 
+pub(crate) async fn ollama_version_handler() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "version": "0.1.4"
+    }))
+}
+
+pub(crate) async fn ollama_show_handler(
+    State(_state): State<AppState>,
+    Json(_req): Json<OllamaShowRequest>,
+) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "license": "Apple Intelligence On-Device License / FoundationModels",
+        "modelfile": "# Modelfile for on-device FoundationModels\nFROM apple-intelligence",
+        "parameters": "context_length 8192",
+        "template": "{{ .System }}\n{{ .Prompt }}",
+        "details": {
+            "parent_model": "",
+            "format": "apple-intelligence",
+            "family": "foundation",
+            "families": ["foundation"],
+            "parameter_size": "3B",
+            "quantization_level": "none"
+        }
+    }))
+}
+
 pub(crate) async fn ollama_tags_handler(State(_state): State<AppState>) -> Response {
     let models = vec![
         OllamaModelTag {
@@ -703,10 +729,31 @@ pub(crate) async fn ollama_tags_handler(State(_state): State<AppState>) -> Respo
     Json(OllamaTagsResponse { models }).into_response()
 }
 
+pub(crate) async fn ollama_ps_handler(State(_state): State<AppState>) -> impl IntoResponse {
+    let models = vec![serde_json::json!({
+        "name": "apple-intelligence",
+        "model": "apple-intelligence",
+        "size": 4096000000u64,
+        "digest": "apple-foundationmodel",
+        "details": {
+            "parent_model": "",
+            "format": "apple-intelligence",
+            "family": "foundation",
+            "families": ["foundation"],
+            "parameter_size": "3B",
+            "quantization_level": "none"
+        },
+        "expires_at": "0001-01-01T00:00:00Z",
+        "size_vram": 4096000000u64
+    })];
+    Json(serde_json::json!({ "models": models }))
+}
+
 pub(crate) async fn ollama_chat_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaChatRequest>,
 ) -> Response {
+    let should_stream = req.stream.unwrap_or(true);
     let mut prompt = String::new();
     for m in &req.messages {
         prompt.push_str(&format!("{}: {}\n", m.role, m.text_content()));
@@ -722,17 +769,77 @@ pub(crate) async fn ollama_chat_handler(
         seed: None,
         use_case: None,
     };
-    match state.engine.generate(&gen_req) {
-        Ok(res) => Json(serde_json::json!({
-            "model": req.model,
-            "message": {
-                "role": "assistant",
-                "content": res.content
-            },
-            "done": true
-        }))
-        .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+
+    if !should_stream {
+        match state.engine.generate(&gen_req) {
+            Ok(res) => Json(serde_json::json!({
+                "model": req.model,
+                "message": {
+                    "role": "assistant",
+                    "content": res.content
+                },
+                "done": true
+            }))
+            .into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        let mut rx = match state.engine.stream_generate(&gen_req) {
+            Ok(rx) => rx,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+            }
+        };
+
+        let model = req.model.clone();
+        let stream = async_stream::stream! {
+            while let Some(chunk) = rx.recv().await {
+                match chunk {
+                    StreamChunk::Delta(delta) => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "message": {
+                                "role": "assistant",
+                                "content": delta
+                            },
+                            "done": false
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok::<_, std::convert::Infallible>(serialized);
+                    }
+                    StreamChunk::Done { .. } => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "done": true,
+                            "done_reason": "stop"
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok(serialized);
+                        break;
+                    }
+                    StreamChunk::Error(e) => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "error": e.to_string(),
+                            "done": true
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok(serialized);
+                        break;
+                    }
+                }
+            }
+        };
+
+        Response::builder()
+            .header(header::CONTENT_TYPE, "application/x-ndjson")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .header(header::CONNECTION, "keep-alive")
+            .body(Body::from_stream(stream))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
     }
 }
 
@@ -740,6 +847,7 @@ pub(crate) async fn ollama_generate_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaGenerateRequest>,
 ) -> Response {
+    let should_stream = req.stream.unwrap_or(true);
     let gen_req = GenerateRequest {
         prompt: req.prompt,
         system_prompt: None,
@@ -751,13 +859,70 @@ pub(crate) async fn ollama_generate_handler(
         seed: None,
         use_case: None,
     };
-    match state.engine.generate(&gen_req) {
-        Ok(res) => Json(serde_json::json!({
-            "model": req.model,
-            "response": res.content,
-            "done": true
-        }))
-        .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+
+    if !should_stream {
+        match state.engine.generate(&gen_req) {
+            Ok(res) => Json(serde_json::json!({
+                "model": req.model,
+                "response": res.content,
+                "done": true
+            }))
+            .into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        let mut rx = match state.engine.stream_generate(&gen_req) {
+            Ok(rx) => rx,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+            }
+        };
+
+        let model = req.model.clone();
+        let stream = async_stream::stream! {
+            while let Some(chunk) = rx.recv().await {
+                match chunk {
+                    StreamChunk::Delta(delta) => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "response": delta,
+                            "done": false
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok::<_, std::convert::Infallible>(serialized);
+                    }
+                    StreamChunk::Done { .. } => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "done": true,
+                            "done_reason": "stop"
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok(serialized);
+                        break;
+                    }
+                    StreamChunk::Error(e) => {
+                        let line = serde_json::json!({
+                            "model": model,
+                            "error": e.to_string(),
+                            "done": true
+                        });
+                        let mut serialized = serde_json::to_string(&line).unwrap_or_default();
+                        serialized.push('\n');
+                        yield Ok(serialized);
+                        break;
+                    }
+                }
+            }
+        };
+
+        Response::builder()
+            .header(header::CONTENT_TYPE, "application/x-ndjson")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .header(header::CONNECTION, "keep-alive")
+            .body(Body::from_stream(stream))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
     }
 }

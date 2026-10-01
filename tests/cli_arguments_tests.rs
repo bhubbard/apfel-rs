@@ -145,3 +145,25 @@ fn test_parse_schema_argument() {
         CliArgs::try_parse_from(["apfel", "--schema", raw_schema, "Generate user"]).unwrap();
     assert_eq!(args_raw.schema, Some(raw_schema.to_string()));
 }
+
+#[test]
+fn test_parse_image_arguments() {
+    let args = CliArgs::try_parse_from([
+        "apfel",
+        "--image",
+        "chart.png",
+        "--image",
+        "diagram.jpg",
+        "Analyze these images",
+    ])
+    .unwrap();
+
+    assert_eq!(args.image, vec!["chart.png", "diagram.jpg"]);
+    assert_eq!(args.prompt, Some("Analyze these images".into()));
+}
+
+#[test]
+fn test_parse_install_completions_flag() {
+    let args = CliArgs::try_parse_from(["apfel", "--install-completions"]).unwrap();
+    assert!(args.install_completions);
+}

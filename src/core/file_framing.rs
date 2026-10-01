@@ -35,3 +35,13 @@ impl FileFraming {
         }
     }
 }
+
+/// Formats extracted document text with name, content, and kind header.
+pub fn frame_document(path: &str, content: &str, kind: &str) -> String {
+    FileFraming::document(path, kind, content)
+}
+
+/// Formats image description and OCR text.
+pub fn frame_image(path: &str, labels: &str, ocr_text: &str) -> String {
+    FileFraming::image(path, labels, ocr_text)
+}

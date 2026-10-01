@@ -605,7 +605,8 @@ async fn test_embeddings_and_ollama_endpoints() {
     // 3. POST /api/generate (Ollama generate)
     let ollama_gen = serde_json::json!({
         "model": "apple-intelligence",
-        "prompt": "What is the capital of France?"
+        "prompt": "What is the capital of France?",
+        "stream": false
     });
     let res = client
         .post(format!("{}/api/generate", base_url))
@@ -624,7 +625,8 @@ async fn test_embeddings_and_ollama_endpoints() {
         "model": "apple-intelligence",
         "messages": [
             { "role": "user", "content": "Hello Ollama" }
-        ]
+        ],
+        "stream": false
     });
     let res = client
         .post(format!("{}/api/chat", base_url))

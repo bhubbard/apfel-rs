@@ -239,6 +239,11 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
         return run_completions(shell_name);
     }
 
+    // 0.1 Completions Auto-Installer
+    if args.install_completions {
+        return detect_shell_and_install_completions();
+    }
+
     // 0.5 Batch Processing Mode
     if args.batch {
         return crate::cli::batch::run_batch_mode(args, engine).await;
@@ -316,6 +321,99 @@ fn run_completions(shell_name: &str) -> i32 {
     ApfelExitCodes::SUCCESS
 }
 
+pub fn install_completions_for_shell(
+    shell_name: &str,
+    home: &std::path::Path,
+) -> Result<(std::path::PathBuf, String), String> {
+    use clap::CommandFactory;
+
+    let (shell, target_file, hint) = match shell_name.to_lowercase().as_str() {
+        "zsh" => {
+            let comp_dir = home.join(".zsh").join("completions");
+            let file = comp_dir.join("_apfel");
+            (
+                clap_complete::Shell::Zsh,
+                file,
+                "Installed zsh completions to ~/.zsh/completions/_apfel. Make sure ~/.zsh/completions is in your fpath, or restart your shell.",
+            )
+        }
+        "bash" => {
+            let comp_dir = home
+                .join(".local")
+                .join("share")
+                .join("bash-completion")
+                .join("completions");
+            let file = comp_dir.join("apfel");
+            (
+                clap_complete::Shell::Bash,
+                file,
+                "Installed bash completions to ~/.local/share/bash-completion/completions/apfel. Restart your shell or run 'source ~/.bashrc'.",
+            )
+        }
+        "fish" => {
+            let comp_dir = home.join(".config").join("fish").join("completions");
+            let file = comp_dir.join("apfel.fish");
+            (
+                clap_complete::Shell::Fish,
+                file,
+                "Installed fish completions to ~/.config/fish/completions/apfel.fish.",
+            )
+        }
+        other => {
+            return Err(format!(
+                "Could not automatically detect a supported shell from '{}'. Supported: zsh, bash, fish.\nUse 'apfel --completions <shell>' to generate manually.",
+                other
+            ));
+        }
+    };
+
+    if let Some(parent) = target_file.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory '{}': {}", parent.display(), e))?;
+    }
+
+    let mut buf = Vec::new();
+    let mut cmd = CliArgs::command();
+    clap_complete::generate(shell, &mut cmd, "apfel", &mut buf);
+
+    std::fs::write(&target_file, buf).map_err(|e| {
+        format!(
+            "Failed to write completions to '{}': {}",
+            target_file.display(),
+            e
+        )
+    })?;
+
+    Ok((target_file, hint.to_string()))
+}
+
+fn detect_shell_and_install_completions() -> i32 {
+    let shell_path = std::env::var("SHELL").unwrap_or_default();
+    let shell_name = std::path::Path::new(&shell_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("");
+
+    let home_str = match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() => h,
+        _ => {
+            eprintln!("Error: $HOME environment variable is not set.");
+            return ApfelExitCodes::RUNTIME_ERROR;
+        }
+    };
+
+    match install_completions_for_shell(shell_name, std::path::Path::new(&home_str)) {
+        Ok((_path, hint)) => {
+            println!("{}", hint.green());
+            ApfelExitCodes::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            ApfelExitCodes::USAGE_ERROR
+        }
+    }
+}
+
 fn run_model_info(engine: &dyn BackendEngine) -> i32 {
     let available = if engine.is_available() { "yes" } else { "no" };
     let languages = engine.supported_languages().join(", ");
@@ -341,6 +439,29 @@ fn run_model_info(engine: &dyn BackendEngine) -> i32 {
     ApfelExitCodes::SUCCESS
 }
 
+pub fn extract_image_vision(path: &str) -> (String, String) {
+    if let Ok(helper) = std::env::var("APFEL_VISION_HELPER") {
+        if let Ok(output) = std::process::Command::new(helper).arg(path).output() {
+            if output.status.success() {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    let labels = json
+                        .get("labels")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let ocr = json
+                        .get("ocr")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    return (labels, ocr);
+                }
+            }
+        }
+    }
+    (String::new(), String::new())
+}
+
 fn run_count_tokens(args: &CliArgs, engine: &dyn BackendEngine) -> i32 {
     let mut text_to_count = String::new();
 
@@ -355,13 +476,34 @@ fn run_count_tokens(args: &CliArgs, engine: &dyn BackendEngine) -> i32 {
                 if !text_to_count.is_empty() {
                     text_to_count.push('\n');
                 }
-                text_to_count.push_str(&content);
+                let kind = std::path::Path::new(file_path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("document");
+                text_to_count.push_str(&crate::core::file_framing::frame_document(
+                    file_path, &content, kind,
+                ));
             }
             Err(e) => {
                 eprintln!("Error reading file '{}': {}", file_path, e);
                 return ApfelExitCodes::USAGE_ERROR;
             }
         }
+    }
+
+    // Read attached images
+    for image_path in &args.image {
+        if !std::path::Path::new(image_path).exists() {
+            eprintln!("Error reading image file '{}': file not found", image_path);
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        let (labels, ocr_text) = extract_image_vision(image_path);
+        if !text_to_count.is_empty() {
+            text_to_count.push('\n');
+        }
+        text_to_count.push_str(&crate::core::file_framing::frame_image(
+            image_path, &labels, &ocr_text,
+        ));
     }
 
     // Read stdin if pipe and prompt is empty
@@ -529,17 +671,18 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         prompt_text.push_str(p);
     }
 
-    // Attach file contents
+    // Process file and image attachments
+    let mut framed_attachments = Vec::new();
+
     for file_path in &args.file {
         match fs::read_to_string(file_path) {
             Ok(content) => {
-                if !prompt_text.is_empty() {
-                    prompt_text.push('\n');
-                }
-                prompt_text.push_str(&format!(
-                    "--- File: {} ---\n{}\n--- End File ---",
-                    file_path, content
-                ));
+                let kind = std::path::Path::new(file_path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("document");
+                let framed = crate::core::file_framing::frame_document(file_path, &content, kind);
+                framed_attachments.push(framed);
             }
             Err(e) => {
                 eprintln!("Error reading file '{}': {}", file_path, e);
@@ -547,6 +690,18 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         }
     }
+
+    for image_path in &args.image {
+        if !std::path::Path::new(image_path).exists() {
+            eprintln!("Error reading image file '{}': file not found", image_path);
+            return ApfelExitCodes::USAGE_ERROR;
+        }
+        let (labels, ocr_text) = extract_image_vision(image_path);
+        let framed = crate::core::file_framing::frame_image(image_path, &labels, &ocr_text);
+        framed_attachments.push(framed);
+    }
+
+    let attachments_text = framed_attachments.join("\n\n");
 
     // Read stdin if pipe
     if !io::stdin().is_terminal() {
@@ -564,7 +719,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     }
 
     // Read messages file or stdin if specified
-    let messages = if let Some(msg_path) = &args.messages {
+    let mut messages = if let Some(msg_path) = &args.messages {
         let content = if msg_path == "-" {
             let mut buf = String::new();
             if let Err(e) = io::stdin().read_to_string(&mut buf) {
@@ -591,6 +746,24 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     } else {
         None
     };
+
+    if !attachments_text.is_empty() {
+        if let Some(ref mut msgs) = messages {
+            let insert_idx = if !msgs.is_empty() && msgs[0].role == "system" {
+                1
+            } else {
+                0
+            };
+            msgs.insert(
+                insert_idx,
+                crate::core::models::OpenAIMessage::user(&attachments_text),
+            );
+        } else if prompt_text.is_empty() {
+            prompt_text = attachments_text;
+        } else {
+            prompt_text = format!("{}\n\n{}", attachments_text, prompt_text);
+        }
+    }
 
     if prompt_text.trim().is_empty() && messages.is_none() {
         eprintln!("No prompt provided. Run 'apfel --help' for usage.");

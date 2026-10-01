@@ -28,9 +28,13 @@ pub struct CliArgs {
     )]
     pub system: Option<String>,
 
-    /// Attach text or file content to prompt (repeatable)
+    /// Path to text or document file(s) to include in prompt context
     #[arg(short = 'f', long = "file", value_name = "PATH")]
     pub file: Vec<String>,
+
+    /// Path to image file(s) to analyze (extracts visual labels & OCR text via Apple Vision)
+    #[arg(long = "image", value_name = "PATH")]
+    pub image: Vec<String>,
 
     /// Stream response tokens to stdout (default when TTY)
     #[arg(long = "stream")]
@@ -188,6 +192,10 @@ pub struct CliArgs {
     /// Generate shell completion script (bash, zsh, fish, powershell)
     #[arg(long = "completions", value_name = "SHELL")]
     pub completions: Option<String>,
+
+    /// Automatically detect current shell and install shell completions into user directories
+    #[arg(long = "install-completions")]
+    pub install_completions: bool,
 
     /// Explicit CLI flag tokens passed by the user (used to disambiguate env var fallbacks)
     #[arg(skip)]

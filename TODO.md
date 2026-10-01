@@ -103,3 +103,7 @@ This document tracks upcoming features, upstream parity items, protocol addition
 - [x] In-memory route pre-serialization (`cached_health`, `cached_models` in `AppState`)
 - [x] CLI structured JSON schema enforcement (`--schema <path|json>`) with auto-repair retries
 - [x] CLI Model Context Protocol integration (`--mcp-config <path>`) with live tool calling in CLI and interactive chat
+- [x] Ollama streaming NDJSON, `/api/version`, `/api/show`, and `/api/ps` protocol completeness
+- [x] Multimodal Vision & Document Ingestion (`--image <path>`, `--file <path>`, and API `image_url` parts)
+- [x] Shell completions auto-installer (`--install-completions`) for Zsh, Bash, and Fish
+- [x] Bump and cut `v0.1.4` release with automated GitHub Actions pipeline

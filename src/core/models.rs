@@ -149,21 +149,51 @@ impl OpenAIMessage {
         }
     }
 
+    pub fn user_parts(parts: Vec<ContentPart>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: Some(MessageContent::Parts(parts)),
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }
+    }
+
     pub fn text_content(&self) -> String {
         match &self.content {
             Some(MessageContent::Text(t)) => t.clone(),
-            Some(MessageContent::Parts(parts)) => parts
-                .iter()
-                .filter_map(|p| match p {
-                    ContentPart::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            Some(MessageContent::Parts(parts)) => {
+                let mut texts = Vec::new();
+                for p in parts {
+                    match p {
+                        ContentPart::Text { text } => texts.push(text.clone()),
+                        ContentPart::ImageUrl { image_url } => {
+                            let name = if image_url.url.starts_with("data:image/") {
+                                if let Some(mime) = image_url
+                                    .url
+                                    .strip_prefix("data:image/")
+                                    .and_then(|s| s.split(';').next())
+                                {
+                                    format!("attachment.{}", mime)
+                                } else {
+                                    "attachment.png".to_string()
+                                }
+                            } else {
+                                image_url.url.clone()
+                            };
+                            texts.push(crate::core::file_framing::frame_image(&name, "", ""));
+                        }
+                    }
+                }
+                texts.join("\n")
+            }
             None => String::new(),
         }
     }
 }
+
+/// Alias for MessageContent for OpenAI specification compatibility.
+pub type OpenAIMessageContent = MessageContent;
 
 /// Content of a conversation message, either plain text or a list of parts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -392,13 +422,22 @@ pub struct OllamaTagsResponse {
     pub models: Vec<OllamaModelTag>,
 }
 
+/// Request payload for Ollama model show endpoint (/api/show).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct OllamaShowRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
 /// Request payload for Ollama chat endpoint (/api/chat).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OllamaChatRequest {
     pub model: String,
     pub messages: Vec<OpenAIMessage>,
     #[serde(default)]
-    pub stream: bool,
+    pub stream: Option<bool>,
 }
 
 /// Request payload for Ollama text generation endpoint (/api/generate).
@@ -407,5 +446,5 @@ pub struct OllamaGenerateRequest {
     pub model: String,
     pub prompt: String,
     #[serde(default)]
-    pub stream: bool,
+    pub stream: Option<bool>,
 }

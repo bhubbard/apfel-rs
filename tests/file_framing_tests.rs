@@ -47,3 +47,57 @@ fn test_image_frame_with_neither_labels_nor_text() {
     assert!(out.contains("(could not confidently identify the image)"));
     assert!(out.contains("text in image: (none detected)"));
 }
+
+#[test]
+fn test_frame_document_and_frame_image_top_level_functions() {
+    use apfel::core::file_framing::{frame_document, frame_image};
+
+    let doc = frame_document("data.csv", "a,b,c\n1,2,3", "csv");
+    assert_eq!(doc, "=== data.csv (csv) ===\na,b,c\n1,2,3");
+
+    let img = frame_image("photo.png", "mountain, sky", "SUMMIT 4000M");
+    assert!(img.contains("=== photo.png (image) ==="));
+    assert!(img.contains("what the image shows: mountain, sky"));
+    assert!(img.contains("text in image:\nSUMMIT 4000M"));
+}
+
+#[test]
+fn test_multimodal_message_content_parts_image_url() {
+    use apfel::core::models::{ContentPart, ImageUrl, OpenAIMessage};
+
+    let msg = OpenAIMessage::user_parts(vec![
+        ContentPart::Text {
+            text: "Describe this image:".to_string(),
+        },
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: "https://example.com/sunset.jpg".to_string(),
+            },
+        },
+    ]);
+
+    let text = msg.text_content();
+    assert!(text.contains("Describe this image:"));
+    assert!(text.contains("=== https://example.com/sunset.jpg (image) ==="));
+    assert!(text.contains("what the image shows: (could not confidently identify the image)"));
+}
+
+#[test]
+fn test_multimodal_message_content_parts_data_uri() {
+    use apfel::core::models::{ContentPart, ImageUrl, OpenAIMessage};
+
+    let msg = OpenAIMessage::user_parts(vec![
+        ContentPart::Text {
+            text: "Analyze chart:".to_string(),
+        },
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=".to_string(),
+            },
+        },
+    ]);
+
+    let text = msg.text_content();
+    assert!(text.contains("Analyze chart:"));
+    assert!(text.contains("=== attachment.png (image) ==="));
+}

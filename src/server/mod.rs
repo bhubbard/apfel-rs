@@ -52,7 +52,10 @@ pub async fn run_server(
             post(handlers::responses_input_tokens_handler),
         )
         .route("/v1/embeddings", post(handlers::embeddings_handler))
+        .route("/api/version", get(handlers::ollama_version_handler))
+        .route("/api/show", post(handlers::ollama_show_handler))
         .route("/api/tags", get(handlers::ollama_tags_handler))
+        .route("/api/ps", get(handlers::ollama_ps_handler))
         .route("/api/chat", post(handlers::ollama_chat_handler))
         .route("/api/generate", post(handlers::ollama_generate_handler))
         .layer(from_fn_with_state(

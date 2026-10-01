@@ -528,3 +528,89 @@ async fn test_cli_runner_mcp_config_failure() {
         ApfelExitCodes::RUNTIME_ERROR
     );
 }
+
+#[tokio::test]
+async fn test_cli_runner_image_attachment() {
+    let mock = Arc::new(MockEngine::with_response("Image analysis response"));
+    let dir = tempfile::tempdir().unwrap();
+    let img_path = dir.path().join("photo.jpg");
+    std::fs::write(&img_path, b"fake-jpg-content").unwrap();
+
+    let args = CliArgs::parse_from([
+        "apfel",
+        "--image",
+        img_path.to_str().unwrap(),
+        "--no-stream",
+        "Explain this image",
+    ]);
+
+    let code = run_cli_with_engine(args, mock.clone()).await;
+    assert_eq!(code, ApfelExitCodes::SUCCESS);
+
+    let last_req = mock.last_request().expect("Expected recorded request");
+    assert!(last_req.prompt.contains("=== "));
+    assert!(last_req.prompt.contains("(image) ==="));
+    assert!(last_req.prompt.contains("what the image shows:"));
+    assert!(last_req.prompt.contains("Explain this image"));
+}
+
+#[tokio::test]
+async fn test_cli_runner_missing_image_attachment_fails() {
+    let mock = Arc::new(MockEngine::new());
+    let args = CliArgs::parse_from(["apfel", "--image", "/path/to/missing/image.png", "Describe"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::USAGE_ERROR
+    );
+}
+
+#[test]
+fn test_cli_install_completions_for_shells() {
+    use apfel::cli::runner::install_completions_for_shell;
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+
+    // 1. Zsh
+    let (zsh_path, zsh_hint) = install_completions_for_shell("zsh", home).unwrap();
+    assert_eq!(
+        zsh_path,
+        home.join(".zsh").join("completions").join("_apfel")
+    );
+    assert!(zsh_path.exists());
+    assert!(zsh_hint.contains("Installed zsh completions"));
+    let zsh_content = std::fs::read_to_string(&zsh_path).unwrap();
+    assert!(zsh_content.contains("apfel"));
+
+    // 2. Bash
+    let (bash_path, bash_hint) = install_completions_for_shell("bash", home).unwrap();
+    assert_eq!(
+        bash_path,
+        home.join(".local")
+            .join("share")
+            .join("bash-completion")
+            .join("completions")
+            .join("apfel")
+    );
+    assert!(bash_path.exists());
+    assert!(bash_hint.contains("Installed bash completions"));
+    let bash_content = std::fs::read_to_string(&bash_path).unwrap();
+    assert!(bash_content.contains("apfel"));
+
+    // 3. Fish
+    let (fish_path, fish_hint) = install_completions_for_shell("fish", home).unwrap();
+    assert_eq!(
+        fish_path,
+        home.join(".config")
+            .join("fish")
+            .join("completions")
+            .join("apfel.fish")
+    );
+    assert!(fish_path.exists());
+    assert!(fish_hint.contains("Installed fish completions"));
+    let fish_content = std::fs::read_to_string(&fish_path).unwrap();
+    assert!(fish_content.contains("apfel"));
+
+    // 4. Unsupported
+    assert!(install_completions_for_shell("unknown_shell", home).is_err());
+}
