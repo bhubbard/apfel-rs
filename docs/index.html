@@ -86,7 +86,7 @@
         "name": "apfel-rs",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS Sequoia (26.0+), Apple Silicon",
-        "softwareVersion": "0.1.0",
+        "softwareVersion": "0.1.4",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -1084,35 +1084,35 @@
               <tr>
                 <td><strong>Server Throughput (RPS)</strong></td>
                 <td>12,156 req/s</td>
-                <td>8,363 req/s</td>
+                <td style="color: #34d399; font-weight: 600;">15,240 req/s</td>
                 <td style="color: #34d399; font-weight: 600;">50,779 req/s</td>
-                <td><strong>Up to 4.17&times; higher throughput</strong></td>
+                <td><strong>Pre-serialized zero-copy route cache</strong></td>
               </tr>
               <tr>
                 <td><strong>Tail Latency (p50 / p95)</strong></td>
                 <td>0.25 ms / 5.71 ms</td>
-                <td>0.15 ms / 10.42 ms</td>
+                <td>0.15 ms / 1.12 ms</td>
                 <td style="color: #34d399; font-weight: 600;">0.13 ms / 0.64 ms</td>
                 <td><strong>Sub-millisecond p95 response</strong></td>
               </tr>
               <tr>
-                <td><strong>Token Counting Latency (Mean)</strong></td>
+                <td><strong>Token Counting &amp; Preflight</strong></td>
                 <td>2,949 ms (spikes to 22.7s)</td>
-                <td style="color: #34d399; font-weight: 600;">95.00 ms</td>
+                <td style="color: #34d399; font-weight: 600;">0.17 ms cached (5,782 req/s)</td>
                 <td style="color: #34d399; font-weight: 600;">6.35 ms</td>
-                <td><strong>31&times; to 464&times; faster preflight</strong></td>
+                <td><strong>152.5&times; speedup on preflight</strong></td>
               </tr>
               <tr>
                 <td><strong>Token Counting Max Jitter</strong></td>
                 <td>22,773 ms (ARC stalls)</td>
-                <td style="color: #34d399; font-weight: 600;">114.1 ms</td>
+                <td style="color: #34d399; font-weight: 600;">0.24 ms (deterministic)</td>
                 <td style="color: #34d399; font-weight: 600;">9.37 ms</td>
                 <td><strong>Zero reference-counting lockups</strong></td>
               </tr>
               <tr>
                 <td><strong>Supported Context Window</strong></td>
                 <td>4,096 tokens</td>
-                <td>4,096 &ndash; 8,192 tokens</td>
+                <td>4,096 &ndash; 8,192 tokens (disclosed)</td>
                 <td style="color: #34d399; font-weight: 600;">32,768 &ndash; 131,072 tokens</td>
                 <td><strong>8&times; to 32&times; larger context budget</strong></td>
               </tr>
@@ -1351,6 +1351,30 @@
               Manage seamlessly via Homebrew. Run <code>brew services start apfel-rs</code> to launch on login on <code>127.0.0.1:32185</code> with automated log rotation.
             </p>
           </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">📜</div>
+            <h3 class="feature-title">JSON Schema Self-Repair</h3>
+            <p class="feature-desc">
+              Pass <code>--schema &lt;path|json&gt;</code> for structured outputs with automatic RFC 6901 <code>$defs</code> reference resolution and self-healing repair retries.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">🦙</div>
+            <h3 class="feature-title">Full Ollama API Drop-In</h3>
+            <p class="feature-desc">
+              Native Ollama protocol compatibility with streaming NDJSON for <code>/api/chat</code> and <code>/api/generate</code>, plus <code>/api/version</code>, <code>/api/show</code>, and <code>/api/ps</code>.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">⚡</div>
+            <h3 class="feature-title">High-Performance Batch Pipelines</h3>
+            <p class="feature-desc">
+              Process high-throughput JSONL streams over standard UNIX pipelines (<code>jq | apfel --batch | jq</code>) with fresh session isolation and zero string reallocation.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -1474,6 +1498,36 @@ curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
                 <td><code>--benchmark</code></td>
                 <td>Execute internal throughput and latency stress test</td>
                 <td><code>apfel --benchmark</code></td>
+              </tr>
+              <tr>
+                <td><code>--batch</code></td>
+                <td>Process streaming JSONL lines from stdin with fresh session isolation</td>
+                <td><code>cat data.jsonl | apfel --batch | jq</code></td>
+              </tr>
+              <tr>
+                <td><code>--schema &lt;SCHEMA&gt;</code></td>
+                <td>Enforce JSON Schema on output with self-repair reprompts (repeat up to 2x)</td>
+                <td><code>apfel --schema schema.json "Generate profile"</code></td>
+              </tr>
+              <tr>
+                <td><code>--mcp-config &lt;PATH&gt;</code></td>
+                <td>Load multi-server MCP config file (stdio tools for CLI &amp; chat)</td>
+                <td><code>apfel --mcp-config mcp.json "Query database"</code></td>
+              </tr>
+              <tr>
+                <td><code>--image &lt;PATH&gt;</code></td>
+                <td>Analyze image using Apple Vision OCR and visual feature labeling</td>
+                <td><code>apfel --image doc.png "Extract text &amp; diagram"</code></td>
+              </tr>
+              <tr>
+                <td><code>--install-completions</code></td>
+                <td>Detect shell ($SHELL) and install completions into user directories</td>
+                <td><code>apfel --install-completions</code></td>
+              </tr>
+              <tr>
+                <td><code>--adapter &lt;PATH&gt;</code></td>
+                <td>Load fine-tuned LoRA model adapter (exposed in /v1/models)</td>
+                <td><code>apfel --adapter ./adapter.bin "Evaluate task"</code></td>
               </tr>
             </tbody>
           </table>
