@@ -458,3 +458,73 @@ async fn test_cli_runner_env_variable_fallback_for_serve() {
         ApfelExitCodes::SUCCESS
     );
 }
+
+#[tokio::test]
+async fn test_cli_runner_schema_raw_json() {
+    let mock = Arc::new(MockEngine::with_response(r#"{"status": "ok", "count": 5}"#));
+    let raw_schema = r#"{"type": "object", "properties": {"status": {"type": "string"}, "count": {"type": "integer"}}, "required": ["status", "count"]}"#;
+    let args = CliArgs::parse_from(["apfel", "--schema", raw_schema, "Fetch metrics"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::SUCCESS
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_schema_retry_success() {
+    let mock = Arc::new(MockEngine::with_responses(vec![
+        "Sorry, I didn't output JSON initially.",
+        r#"{"status": "recovered", "count": 10}"#,
+    ]));
+    let raw_schema = r#"{"type": "object", "properties": {"status": {"type": "string"}, "count": {"type": "integer"}}, "required": ["status", "count"]}"#;
+    let args = CliArgs::parse_from(["apfel", "--schema", raw_schema, "Fetch metrics"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::SUCCESS
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_schema_exhaust_retries_require_complete() {
+    let mock = Arc::new(MockEngine::with_response("This is never JSON"));
+    let raw_schema =
+        r#"{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}"#;
+    let args = CliArgs::parse_from([
+        "apfel",
+        "--schema",
+        raw_schema,
+        "--require-complete",
+        "Generate integer",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::INCOMPLETE_RESPONSE
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_schema_exhaust_retries_best_effort() {
+    let mock = Arc::new(MockEngine::with_response("This is never JSON"));
+    let raw_schema =
+        r#"{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}"#;
+    let args = CliArgs::parse_from(["apfel", "--schema", raw_schema, "Generate integer"]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::SUCCESS
+    );
+}
+
+#[tokio::test]
+async fn test_cli_runner_mcp_config_failure() {
+    let mock = Arc::new(MockEngine::new());
+    let args = CliArgs::parse_from([
+        "apfel",
+        "--mcp-config",
+        "/path/to/nonexistent/mcp_config.json",
+        "Run something",
+    ]);
+    assert_eq!(
+        run_cli_with_engine(args, mock).await,
+        ApfelExitCodes::RUNTIME_ERROR
+    );
+}

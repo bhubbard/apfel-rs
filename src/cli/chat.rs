@@ -4,9 +4,12 @@
 // ============================================================================
 
 use crate::backend::engine::{BackendEngine, GenerateRequest, StreamChunk};
+use crate::backend::session::SessionManager;
 use crate::core::context::{ContextConfig, ContextManager, ContextStrategy};
 use crate::core::error::ApfelError;
 use crate::core::models::OpenAIMessage;
+use crate::core::schema::SchemaParser;
+use crate::mcp::client::MCPManager;
 use colored::Colorize;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -52,12 +55,21 @@ pub async fn run_chat_loop(
     system_prompt: Option<String>,
     permissive: bool,
     strategy: ContextStrategy,
+    schema: Option<String>,
+    mcp_manager: Option<Arc<MCPManager>>,
 ) -> Result<(), ApfelError> {
     println!("{}", "apfel interactive chat session".bold().cyan());
     println!(
         "{}",
         "Commands: /exit to quit, /clear to reset history, /info for status".dimmed()
     );
+
+    if let Some(mcp) = &mcp_manager {
+        let tools = mcp.all_tools();
+        if !tools.is_empty() {
+            println!("{}", format!("Loaded {} MCP tool(s)", tools.len()).dimmed());
+        }
+    }
     println!();
 
     let mut rl = DefaultEditor::new().map_err(|e| ApfelError::Runtime(e.to_string()))?;
@@ -66,10 +78,44 @@ pub async fn run_chat_loop(
         let _ = rl.load_history(hf);
     }
 
+    let (schema_ir, schema_directive) = if let Some(ref s) = schema {
+        let schema_content = match std::fs::read_to_string(s) {
+            Ok(c) => c,
+            Err(_) => s.clone(),
+        };
+        match SchemaParser::parse(&schema_content, "OutputSchema") {
+            Ok(ir) => {
+                let directive = format!(
+                    "You must respond ONLY with valid JSON conforming to this schema:\n{}",
+                    schema_content
+                );
+                (Some(ir), Some(directive))
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Schema error".red().bold(), e);
+                return Err(ApfelError::Usage(e.to_string()));
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    let mut base_system = system_prompt;
+    let build_system_content = |base: Option<&str>, directive: Option<&str>| -> Option<String> {
+        match (base, directive) {
+            (Some(b), Some(d)) if !b.is_empty() => Some(format!("{}\n\n{}", b, d)),
+            (Some(b), _) if !b.is_empty() => Some(b.to_string()),
+            (_, Some(d)) => Some(d.to_string()),
+            _ => None,
+        }
+    };
+
     let mut history: Vec<OpenAIMessage> = Vec::new();
 
-    if let Some(sys) = &system_prompt {
-        history.push(OpenAIMessage::system(sys));
+    if let Some(sys_text) =
+        build_system_content(base_system.as_deref(), schema_directive.as_deref())
+    {
+        history.push(OpenAIMessage::system(sys_text));
     }
 
     let config = ContextConfig {
@@ -115,7 +161,16 @@ pub async fn run_chat_loop(
                     let new_sys = trimmed[8..].trim();
                     history.retain(|m| m.role != "system");
                     if !new_sys.is_empty() {
-                        history.insert(0, OpenAIMessage::system(new_sys));
+                        base_system = Some(new_sys.to_string());
+                    } else {
+                        base_system = None;
+                    }
+                    if let Some(sys_text) =
+                        build_system_content(base_system.as_deref(), schema_directive.as_deref())
+                    {
+                        history.insert(0, OpenAIMessage::system(sys_text));
+                    }
+                    if base_system.is_some() {
                         println!("{}", "Updated system instructions.".green());
                     } else {
                         println!("{}", "Cleared system instructions.".dimmed());
@@ -130,8 +185,11 @@ pub async fn run_chat_loop(
                     }
                     "/clear" => {
                         history.clear();
-                        if let Some(sys) = &system_prompt {
-                            history.push(OpenAIMessage::system(sys));
+                        if let Some(sys_text) = build_system_content(
+                            base_system.as_deref(),
+                            schema_directive.as_deref(),
+                        ) {
+                            history.push(OpenAIMessage::system(sys_text));
                         }
                         println!("{}", "Conversation cleared.".dimmed());
                         continue;
@@ -170,69 +228,116 @@ pub async fn run_chat_loop(
 
                 history.push(OpenAIMessage::user(trimmed));
 
-                // Trim context to fit
-                let budget = engine.context_size().saturating_sub(config.output_reserve);
-                let trimmed_messages =
-                    match ContextManager::trim_messages(&history, budget, &config, |t| {
-                        engine.count_tokens(t)
-                    }) {
-                        Some(m) => m,
-                        None => {
-                            eprintln!("{}", "Error: conversation exceeds context limit.".red());
+                if let Some(mcp) = &mcp_manager {
+                    let session_mgr = SessionManager::new(engine.clone(), Some(mcp.clone()));
+                    match session_mgr
+                        .process_messages(&history, None, &config, None, None, None, None)
+                        .await
+                    {
+                        Ok(res) => {
+                            for log in &res.tool_log {
+                                let status = if log.is_error {
+                                    "error".red()
+                                } else {
+                                    "ok".green()
+                                };
+                                println!(
+                                    "{}",
+                                    format!("  ⚙ [mcp: {}] ({})", log.name, status).dimmed()
+                                );
+                            }
+                            if let Some(ref ir) = schema_ir {
+                                if let Err(err) = SchemaParser::validate(ir, &res.content) {
+                                    eprintln!(
+                                        "{}: Model response did not conform to schema: {}",
+                                        "Warning".yellow().bold(),
+                                        err
+                                    );
+                                }
+                            }
+                            print!("{}", "apple ".bold().purple());
+                            println!("{}", res.content);
+                            history.push(OpenAIMessage::assistant(res.content));
+                        }
+                        Err(e) => {
+                            eprintln!("{}: {}", "Error".red().bold(), e);
+                        }
+                    }
+                } else {
+                    // Trim context to fit
+                    let budget = engine.context_size().saturating_sub(config.output_reserve);
+                    let trimmed_messages =
+                        match ContextManager::trim_messages(&history, budget, &config, |t| {
+                            engine.count_tokens(t)
+                        }) {
+                            Some(m) => m,
+                            None => {
+                                eprintln!("{}", "Error: conversation exceeds context limit.".red());
+                                continue;
+                            }
+                        };
+
+                    let sys = trimmed_messages
+                        .iter()
+                        .filter(|m| m.role == "system")
+                        .map(|m| m.text_content())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+
+                    let gen_req = GenerateRequest {
+                        prompt: trimmed.to_string(),
+                        system_prompt: if sys.is_empty() { None } else { Some(sys) },
+                        messages: Some(trimmed_messages),
+                        temperature: None,
+                        top_p: None,
+                        max_tokens: None,
+                        permissive,
+                        seed: None,
+                        use_case: None,
+                    };
+
+                    let mut rx = match engine.stream_generate(&gen_req) {
+                        Ok(rx) => rx,
+                        Err(e) => {
+                            eprintln!("{}: {}", "Error".red().bold(), e);
                             continue;
                         }
                     };
 
-                let sys = trimmed_messages
-                    .iter()
-                    .filter(|m| m.role == "system")
-                    .map(|m| m.text_content())
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                    print!("{}", "apple ".bold().purple());
+                    let _ = io::stdout().flush();
 
-                let gen_req = GenerateRequest {
-                    prompt: trimmed.to_string(),
-                    system_prompt: if sys.is_empty() { None } else { Some(sys) },
-                    messages: Some(trimmed_messages),
-                    temperature: None,
-                    top_p: None,
-                    max_tokens: None,
-                    permissive,
-                    seed: None,
-                    use_case: None,
-                };
-
-                let mut rx = match engine.stream_generate(&gen_req) {
-                    Ok(rx) => rx,
-                    Err(e) => {
-                        eprintln!("{}: {}", "Error".red().bold(), e);
-                        continue;
-                    }
-                };
-
-                print!("{}", "apple ".bold().purple());
-                let _ = io::stdout().flush();
-
-                let mut assistant_resp = String::new();
-                while let Some(chunk) = rx.recv().await {
-                    match chunk {
-                        StreamChunk::Delta(delta) => {
-                            print!("{}", delta);
-                            let _ = io::stdout().flush();
-                            assistant_resp.push_str(&delta);
-                        }
-                        StreamChunk::Done { .. } => {
-                            println!();
-                            break;
-                        }
-                        StreamChunk::Error(e) => {
-                            eprintln!("\n{}: {}", "Stream error".red().bold(), e);
-                            break;
+                    let mut assistant_resp = String::new();
+                    while let Some(chunk) = rx.recv().await {
+                        match chunk {
+                            StreamChunk::Delta(delta) => {
+                                print!("{}", delta);
+                                let _ = io::stdout().flush();
+                                assistant_resp.push_str(&delta);
+                            }
+                            StreamChunk::Done { .. } => {
+                                println!();
+                                break;
+                            }
+                            StreamChunk::Error(e) => {
+                                eprintln!("\n{}: {}", "Stream error".red().bold(), e);
+                                break;
+                            }
                         }
                     }
+
+                    if let Some(ref ir) = schema_ir {
+                        if let Err(err) = SchemaParser::validate(ir, &assistant_resp) {
+                            eprintln!(
+                                "{}: Model response did not conform to schema: {}",
+                                "Warning".yellow().bold(),
+                                err
+                            );
+                        }
+                    }
+
+                    history.push(OpenAIMessage::assistant(assistant_resp));
                 }
-
-                history.push(OpenAIMessage::assistant(assistant_resp));
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("\nBye!");

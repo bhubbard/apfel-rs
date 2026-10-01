@@ -122,3 +122,26 @@ fn test_parse_context_strategy_options() {
     assert_eq!(args.context_strategy, "sliding-window");
     assert_eq!(args.max_turns, Some(10));
 }
+
+#[test]
+fn test_parse_mcp_config() {
+    let args =
+        CliArgs::try_parse_from(["apfel", "--mcp-config", "/path/to/mcp.json", "Hello prompt"])
+            .unwrap();
+
+    assert_eq!(args.mcp_config, Some("/path/to/mcp.json".to_string()));
+    assert_eq!(args.prompt, Some("Hello prompt".to_string()));
+}
+
+#[test]
+fn test_parse_schema_argument() {
+    let args_file =
+        CliArgs::try_parse_from(["apfel", "--schema", "user_schema.json", "Generate user"])
+            .unwrap();
+    assert_eq!(args_file.schema, Some("user_schema.json".to_string()));
+
+    let raw_schema = r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
+    let args_raw =
+        CliArgs::try_parse_from(["apfel", "--schema", raw_schema, "Generate user"]).unwrap();
+    assert_eq!(args_raw.schema, Some(raw_schema.to_string()));
+}

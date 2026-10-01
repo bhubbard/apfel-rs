@@ -97,3 +97,9 @@ This document tracks upcoming features, upstream parity items, protocol addition
 - [x] Multi-turn tool call atomic preservation during context trimming (Issue #482)
 - [x] Local JSON Schema `$defs` and `#/definitions` reference resolution (Issue #479)
 - [x] Fine-tuned model adapters (`--adapter <path>`) CLI flag and routing (Issue #362)
+- [x] Token counting caching with 152x speedup and zero-thread synchronous FFI execution
+- [x] Homebrew Formula (`Formula/apfel.rb`) with completions and test block
+- [x] GitHub Actions automated release pipeline (`.github/workflows/release.yml`) for Apple Silicon binaries
+- [x] In-memory route pre-serialization (`cached_health`, `cached_models` in `AppState`)
+- [x] CLI structured JSON schema enforcement (`--schema <path|json>`) with auto-repair retries
+- [x] CLI Model Context Protocol integration (`--mcp-config <path>`) with live tool calling in CLI and interactive chat

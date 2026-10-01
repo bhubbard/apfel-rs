@@ -430,6 +430,10 @@ async fn test_adapter_exposed_in_models_endpoint() {
         .await
         .expect("List models failed");
     assert_eq!(res.status(), 200);
+    assert_eq!(
+        res.headers().get("content-type").unwrap().to_str().unwrap(),
+        "application/json"
+    );
     let models_body: serde_json::Value = res.json().await.unwrap();
     let models_data = models_body["data"].as_array().unwrap();
 
@@ -451,6 +455,25 @@ async fn test_adapter_exposed_in_models_endpoint() {
         tagging_entry.is_some(),
         "apple-content-tagging model should be present in /v1/models"
     );
+
+    // Also assert that /health exposes adapter
+    let health_res = client
+        .get(format!("{}/health", base_url))
+        .send()
+        .await
+        .expect("Health request failed");
+    assert_eq!(health_res.status(), 200);
+    assert_eq!(
+        health_res
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "application/json"
+    );
+    let health_json: serde_json::Value = health_res.json().await.unwrap();
+    assert_eq!(health_json["adapter"], "/path/to/sentiment.fmadapter");
 }
 
 #[tokio::test]
@@ -614,4 +637,83 @@ async fn test_embeddings_and_ollama_endpoints() {
     assert_eq!(chat_json["model"], "apple-intelligence");
     assert_eq!(chat_json["done"], true);
     assert_eq!(chat_json["message"]["content"], "Ollama response from mock");
+}
+
+#[tokio::test]
+async fn test_precomputed_routes_health_and_models_zero_overhead() {
+    let mock = Arc::new(MockEngine::new());
+    let port = 9129;
+    let host = "127.0.0.1";
+    let token = None;
+    let allowed_origins = vec!["*".to_string()];
+
+    let engine_clone = mock.clone();
+    tokio::spawn(async move {
+        let _ = run_server(host, port, token, allowed_origins, true, engine_clone, None).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}:{}", host, port);
+
+    // 1. Initial health fetch
+    let res = client
+        .get(format!("{}/health", base_url))
+        .send()
+        .await
+        .expect("Health request failed");
+    assert_eq!(res.status(), 200);
+    assert_eq!(
+        res.headers().get("content-type").unwrap().to_str().unwrap(),
+        "application/json"
+    );
+    let initial_health_bytes = res.bytes().await.expect("Failed to read bytes");
+    let health_json: serde_json::Value =
+        serde_json::from_slice(&initial_health_bytes).expect("Invalid health JSON");
+    assert_eq!(health_json["status"], "ok");
+    assert_eq!(health_json["model"], "apple-foundationmodel");
+    assert_eq!(health_json["on_device"], true);
+    assert_eq!(health_json["context_size"], 4096);
+    assert_eq!(health_json["context_window_measured"], true);
+
+    // 2. Initial models fetch
+    let res = client
+        .get(format!("{}/v1/models", base_url))
+        .send()
+        .await
+        .expect("Models request failed");
+    assert_eq!(res.status(), 200);
+    assert_eq!(
+        res.headers().get("content-type").unwrap().to_str().unwrap(),
+        "application/json"
+    );
+    let initial_models_bytes = res.bytes().await.expect("Failed to read bytes");
+    let models_json: serde_json::Value =
+        serde_json::from_slice(&initial_models_bytes).expect("Invalid models JSON");
+    assert_eq!(models_json["object"], "list");
+    let data = models_json["data"].as_array().expect("Expected data array");
+    assert!(data.iter().any(|m| m["id"] == "apple-foundationmodel"
+        && m["context_window"] == 4096
+        && m["context_window_measured"] == true));
+
+    // 3. High-frequency scrape simulation: assert identical byte payload across multiple hits
+    for _ in 0..25 {
+        let h_res = client
+            .get(format!("{}/health", base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(h_res.status(), 200);
+        let b = h_res.bytes().await.unwrap();
+        assert_eq!(b, initial_health_bytes);
+
+        let m_res = client
+            .get(format!("{}/v1/models", base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(m_res.status(), 200);
+        let mb = m_res.bytes().await.unwrap();
+        assert_eq!(mb, initial_models_bytes);
+    }
 }

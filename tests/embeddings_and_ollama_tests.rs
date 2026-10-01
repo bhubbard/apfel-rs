@@ -49,7 +49,7 @@ fn test_generate_request_defaults_and_serde() {
     assert_eq!(def.temperature, None);
     assert_eq!(def.top_p, None);
     assert_eq!(def.max_tokens, None);
-    assert_eq!(def.permissive, false);
+    assert!(!def.permissive);
     assert_eq!(def.seed, None);
     assert_eq!(def.use_case, None);
 

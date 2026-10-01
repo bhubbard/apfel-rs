@@ -489,3 +489,76 @@ fn test_schema_parser_ref_description_override() {
         _ => panic!("Expected Object"),
     }
 }
+
+#[test]
+fn test_schema_parser_validate_success() {
+    let schema_json = r#"{
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "age": { "type": "integer" },
+            "role": { "type": "string", "enum": ["admin", "user"] }
+        },
+        "required": ["name", "role"]
+    }"#;
+    let ir = SchemaParser::parse(schema_json, "User").unwrap();
+
+    let valid_json = r#"{"name": "Alice", "age": 30, "role": "admin"}"#;
+    let res = SchemaParser::validate(&ir, valid_json);
+    assert!(res.is_ok());
+
+    // With markdown code fences
+    let fenced_json = format!("```json\n{}\n```", valid_json);
+    let res_fenced = SchemaParser::validate(&ir, &fenced_json);
+    assert!(res_fenced.is_ok());
+}
+
+#[test]
+fn test_schema_parser_validate_failures() {
+    let schema_json = r#"{
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "age": { "type": "integer" },
+            "role": { "type": "string", "enum": ["admin", "user"] }
+        },
+        "required": ["name", "role"]
+    }"#;
+    let ir = SchemaParser::parse(schema_json, "User").unwrap();
+
+    // Missing required property 'name'
+    let missing_req = r#"{"age": 30, "role": "admin"}"#;
+    let res_missing = SchemaParser::validate(&ir, missing_req);
+    assert!(res_missing.is_err());
+    assert!(res_missing
+        .unwrap_err()
+        .contains("Missing required property 'name'"));
+
+    // Wrong type for 'age' (string instead of integer)
+    let wrong_type = r#"{"name": "Alice", "age": "thirty", "role": "admin"}"#;
+    let res_wrong_type = SchemaParser::validate(&ir, wrong_type);
+    assert!(res_wrong_type.is_err());
+    assert!(res_wrong_type.unwrap_err().contains("Expected integer"));
+
+    // Enum violation for 'role'
+    let invalid_enum = r#"{"name": "Alice", "age": 30, "role": "superadmin"}"#;
+    let res_enum = SchemaParser::validate(&ir, invalid_enum);
+    assert!(res_enum.is_err());
+    assert!(res_enum
+        .unwrap_err()
+        .contains("Value 'superadmin' for 'role' is not one of allowed enum values"));
+
+    // Non-optional null
+    let null_req = r#"{"name": null, "role": "admin"}"#;
+    let res_null = SchemaParser::validate(&ir, null_req);
+    assert!(res_null.is_err());
+    assert!(res_null
+        .unwrap_err()
+        .contains("Required property 'name' cannot be null"));
+
+    // Completely invalid JSON
+    let bad_json = r#"{ not valid json }"#;
+    let res_bad = SchemaParser::validate(&ir, bad_json);
+    assert!(res_bad.is_err());
+    assert!(res_bad.unwrap_err().contains("Invalid JSON"));
+}

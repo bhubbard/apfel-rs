@@ -6,8 +6,62 @@
 use crate::core::error::ApfelError;
 use crate::core::models::{FunctionDefinition, OpenAITool};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// Configuration for an individual MCP server process.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+/// Model Context Protocol (MCP) configuration holding server configurations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct McpConfig {
+    #[serde(default, rename = "mcpServers")]
+    pub mcp_servers: HashMap<String, McpServerConfig>,
+    #[serde(default)]
+    pub servers: HashMap<String, McpServerConfig>,
+}
+
+impl McpConfig {
+    /// Parses MCP configuration from a JSON string.
+    pub fn parse(json_str: &str) -> Result<Self, ApfelError> {
+        // First try standard object format { "mcpServers": { ... } } or { "servers": { ... } }
+        if let Ok(cfg) = serde_json::from_str::<McpConfig>(json_str) {
+            if !cfg.mcp_servers.is_empty() || !cfg.servers.is_empty() {
+                return Ok(cfg);
+            }
+        }
+
+        // Try direct dictionary format { "server1": { "command": "...", "args": [...] } }
+        if let Ok(direct) = serde_json::from_str::<HashMap<String, McpServerConfig>>(json_str) {
+            if !direct.is_empty() {
+                return Ok(McpConfig {
+                    mcp_servers: direct,
+                    servers: HashMap::new(),
+                });
+            }
+        }
+
+        serde_json::from_str::<McpConfig>(json_str)
+            .map_err(|e| ApfelError::MCP(format!("Failed to parse MCP configuration: {}", e)))
+    }
+
+    /// Combines and returns all configured servers.
+    pub fn all_servers(&self) -> HashMap<String, McpServerConfig> {
+        let mut map = self.servers.clone();
+        for (k, v) in &self.mcp_servers {
+            map.insert(k.clone(), v.clone());
+        }
+        map
+    }
+}
 
 /// Basic server identification metadata returned by MCP server initialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]

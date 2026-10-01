@@ -76,6 +76,7 @@ version = "0.1.3"
 dependencies = [
  "async-stream",
  "axum",
+ "bytes",
  "cc",
  "chrono",
  "clap",

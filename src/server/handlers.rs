@@ -24,6 +24,124 @@ use uuid::Uuid;
 pub(crate) struct AppState {
     pub(crate) engine: Arc<dyn BackendEngine>,
     pub(crate) mcp_manager: Option<Arc<MCPManager>>,
+    pub(crate) cached_health: bytes::Bytes,
+    pub(crate) cached_models: bytes::Bytes,
+}
+
+impl AppState {
+    pub(crate) fn new(
+        engine: Arc<dyn BackendEngine>,
+        mcp_manager: Option<Arc<MCPManager>>,
+    ) -> Self {
+        let cached_health = Self::precompute_health(engine.as_ref());
+        let cached_models = Self::precompute_models(engine.as_ref());
+        Self {
+            engine,
+            mcp_manager,
+            cached_health,
+            cached_models,
+        }
+    }
+
+    fn precompute_health(engine: &dyn BackendEngine) -> bytes::Bytes {
+        let languages = engine.supported_languages();
+        let mut health_map = serde_json::json!({
+            "status": "ok",
+            "model": "apple-foundationmodel",
+            "on_device": true,
+            "available": engine.is_available(),
+            "context_size": engine.context_size(),
+            "context_window_measured": engine.context_window_measured(),
+            "languages": languages,
+            "framework": "FoundationModels (macOS 26+)"
+        });
+        if let Some(adapter) = engine.adapter_path() {
+            if let Some(obj) = health_map.as_object_mut() {
+                obj.insert(
+                    "adapter".to_string(),
+                    serde_json::Value::String(adapter.to_string()),
+                );
+            }
+        }
+        let vec = serde_json::to_vec(&health_map).unwrap_or_default();
+        bytes::Bytes::from(vec)
+    }
+
+    fn precompute_models(engine: &dyn BackendEngine) -> bytes::Bytes {
+        let engine_context = engine.context_size();
+        let engine_measured = engine.context_window_measured();
+        let is_mlx = engine.model_name().contains("mlx");
+
+        let (apple_context, apple_measured) = if !is_mlx {
+            (engine_context, engine_measured)
+        } else {
+            (4096, false)
+        };
+
+        let (mlx_context, mlx_measured) = if is_mlx {
+            (engine_context, engine_measured)
+        } else {
+            (8192, true)
+        };
+
+        let mut models = vec![
+            ModelObject {
+                id: "apple-foundationmodel".to_string(),
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "apple".to_string(),
+                context_window: apple_context,
+                context_window_measured: apple_measured,
+            },
+            ModelObject {
+                id: "apple-content-tagging".to_string(),
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "apple".to_string(),
+                context_window: apple_context,
+                context_window_measured: apple_measured,
+            },
+            ModelObject {
+                id: "gpt-4o-mini".to_string(), // alias for compatibility
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "apple".to_string(),
+                context_window: apple_context,
+                context_window_measured: apple_measured,
+            },
+            ModelObject {
+                id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit".to_string(),
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "mlx-community".to_string(),
+                context_window: mlx_context,
+                context_window_measured: mlx_measured,
+            },
+        ];
+
+        if let Some(adapter_path) = engine.adapter_path() {
+            let adapter_stem = std::path::Path::new(adapter_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("custom-adapter");
+            let adapter_id = format!("{}:adapter-{}", engine.model_name(), adapter_stem);
+            models.push(ModelObject {
+                id: adapter_id,
+                object: "model".to_string(),
+                created: 1718000000,
+                owned_by: "user-adapter".to_string(),
+                context_window: engine_context,
+                context_window_measured: engine_measured,
+            });
+        }
+
+        let resp = ModelList {
+            object: "list".to_string(),
+            data: models,
+        };
+        let vec = serde_json::to_vec(&resp).unwrap_or_default();
+        bytes::Bytes::from(vec)
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -54,95 +172,21 @@ struct DeltaView<'a> {
 // MARK: - Health & Info
 
 pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
-    let languages = state.engine.supported_languages();
-    let resp = serde_json::json!({
-        "status": "ok",
-        "model": "apple-foundationmodel",
-        "on_device": true,
-        "available": state.engine.is_available(),
-        "context_size": state.engine.context_size(),
-        "context_window_measured": state.engine.context_window_measured(),
-        "languages": languages,
-        "framework": "FoundationModels (macOS 26+)"
-    });
-    Json(resp)
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        state.cached_health.clone(),
+    )
 }
 
 // MARK: - Models
 
 pub(crate) async fn list_models_handler(State(state): State<AppState>) -> impl IntoResponse {
-    let engine_context = state.engine.context_size();
-    let engine_measured = state.engine.context_window_measured();
-    let is_mlx = state.engine.model_name().contains("mlx");
-
-    let (apple_context, apple_measured) = if !is_mlx {
-        (engine_context, engine_measured)
-    } else {
-        (4096, false)
-    };
-
-    let (mlx_context, mlx_measured) = if is_mlx {
-        (engine_context, engine_measured)
-    } else {
-        (8192, true)
-    };
-
-    let mut models = vec![
-        ModelObject {
-            id: "apple-foundationmodel".to_string(),
-            object: "model".to_string(),
-            created: 1718000000,
-            owned_by: "apple".to_string(),
-            context_window: apple_context,
-            context_window_measured: apple_measured,
-        },
-        ModelObject {
-            id: "apple-content-tagging".to_string(),
-            object: "model".to_string(),
-            created: 1718000000,
-            owned_by: "apple".to_string(),
-            context_window: apple_context,
-            context_window_measured: apple_measured,
-        },
-        ModelObject {
-            id: "gpt-4o-mini".to_string(), // alias for compatibility
-            object: "model".to_string(),
-            created: 1718000000,
-            owned_by: "apple".to_string(),
-            context_window: apple_context,
-            context_window_measured: apple_measured,
-        },
-        ModelObject {
-            id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit".to_string(),
-            object: "model".to_string(),
-            created: 1718000000,
-            owned_by: "mlx-community".to_string(),
-            context_window: mlx_context,
-            context_window_measured: mlx_measured,
-        },
-    ];
-
-    if let Some(adapter_path) = state.engine.adapter_path() {
-        let adapter_stem = std::path::Path::new(adapter_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("custom-adapter");
-        let adapter_id = format!("{}:adapter-{}", state.engine.model_name(), adapter_stem);
-        models.push(ModelObject {
-            id: adapter_id,
-            object: "model".to_string(),
-            created: 1718000000,
-            owned_by: "user-adapter".to_string(),
-            context_window: engine_context,
-            context_window_measured: engine_measured,
-        });
-    }
-
-    let resp = ModelList {
-        object: "list".to_string(),
-        data: models,
-    };
-    Json(resp)
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        state.cached_models.clone(),
+    )
 }
 
 // MARK: - Chat Completions

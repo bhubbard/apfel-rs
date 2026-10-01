@@ -266,8 +266,21 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
 
     // 5. Chat Mode
     if args.chat {
+        let mcp_manager = match setup_mcp_manager(&args).await {
+            Ok(m) => m,
+            Err(code) => return code,
+        };
         let strategy = ContextStrategy::from_str(&args.context_strategy).unwrap_or_default();
-        match run_chat_loop(engine, args.system, args.permissive, strategy).await {
+        match run_chat_loop(
+            engine,
+            args.system,
+            args.permissive,
+            strategy,
+            args.schema,
+            mcp_manager,
+        )
+        .await
+        {
             Ok(_) => return ApfelExitCodes::SUCCESS,
             Err(e) => {
                 eprintln!("{}: {}", "Error".red().bold(), e);
@@ -315,6 +328,7 @@ fn run_model_info(engine: &dyn BackendEngine) -> i32 {
 
     println!("apfel v{} — model info", env!("CARGO_PKG_VERSION"));
     println!("├ model:      {}", engine.model_name());
+    println!("├ engine:     Neural Engine (Apple Silicon)");
     println!("├ on-device:  true (always)");
     println!("├ available:  {}", available);
     println!("├ context:    {} tokens {}", context, measured_str);
@@ -445,6 +459,36 @@ async fn run_benchmark(engine: &dyn BackendEngine) -> i32 {
     ApfelExitCodes::SUCCESS
 }
 
+async fn setup_mcp_manager(args: &CliArgs) -> Result<Option<Arc<MCPManager>>, i32> {
+    let mut connections = Vec::new();
+
+    if let Some(config_path) = &args.mcp_config {
+        match MCPManager::load_config_file(config_path, 10).await {
+            Ok(mgr) => connections.extend(mgr.into_connections()),
+            Err(e) => {
+                eprintln!("Failed to load MCP config '{}': {}", config_path, e);
+                return Err(ApfelExitCodes::RUNTIME_ERROR);
+            }
+        }
+    }
+
+    if !args.mcp_servers.is_empty() {
+        match MCPManager::load_servers(&args.mcp_servers, 10).await {
+            Ok(mgr) => connections.extend(mgr.into_connections()),
+            Err(e) => {
+                eprintln!("Failed to initialize MCP servers: {}", e);
+                return Err(ApfelExitCodes::RUNTIME_ERROR);
+            }
+        }
+    }
+
+    if connections.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(Arc::new(MCPManager::from_connections(connections))))
+    }
+}
+
 async fn run_server_mode(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     let allowed_origins = if args.allowed_origins.is_empty() {
         vec![
@@ -453,19 +497,12 @@ async fn run_server_mode(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             "http://[::1]".to_string(),
         ]
     } else {
-        args.allowed_origins
+        args.allowed_origins.clone()
     };
 
-    let mcp_manager = if !args.mcp_servers.is_empty() {
-        match MCPManager::load_servers(&args.mcp_servers, 10).await {
-            Ok(m) => Some(Arc::new(m)),
-            Err(e) => {
-                eprintln!("Failed to initialize MCP servers: {}", e);
-                return ApfelExitCodes::RUNTIME_ERROR;
-            }
-        }
-    } else {
-        None
+    let mcp_manager = match setup_mcp_manager(&args).await {
+        Ok(m) => m,
+        Err(code) => return code,
     };
 
     if let Err(e) = run_server(
@@ -571,48 +608,50 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         );
     }
 
-    if let Some(schema_path) = &args.schema {
-        match fs::read_to_string(schema_path) {
-            Ok(schema_content) => {
-                if let Err(e) = SchemaParser::parse(&schema_content, "OutputSchema") {
-                    eprintln!("Schema validation error: {}", e);
-                    return ApfelExitCodes::USAGE_ERROR;
-                }
+    let schema_ir = if let Some(schema_arg) = &args.schema {
+        let schema_content = match fs::read_to_string(schema_arg) {
+            Ok(content) => content,
+            Err(_) => schema_arg.clone(),
+        };
+
+        match SchemaParser::parse(&schema_content, "OutputSchema") {
+            Ok(ir) => {
                 let schema_prompt = format!(
-                    "\n\nYou must respond ONLY with valid JSON conforming to this schema:\n{}",
+                    "You must respond ONLY with valid JSON conforming to this schema:\n{}",
                     schema_content
                 );
+                if !system_instructions.is_empty() {
+                    system_instructions.push_str("\n\n");
+                }
                 system_instructions.push_str(&schema_prompt);
+                Some(ir)
             }
             Err(e) => {
-                eprintln!("Error reading schema file '{}': {}", schema_path, e);
+                eprintln!("Schema validation error: {}", e);
                 return ApfelExitCodes::USAGE_ERROR;
-            }
-        }
-    }
-
-    // Setup MCP servers if provided
-    let mcp_manager = if !args.mcp_servers.is_empty() {
-        match MCPManager::load_servers(&args.mcp_servers, 10).await {
-            Ok(m) => Some(Arc::new(m)),
-            Err(e) => {
-                eprintln!("Failed to initialize MCP servers: {}", e);
-                return ApfelExitCodes::RUNTIME_ERROR;
             }
         }
     } else {
         None
     };
 
-    let should_stream =
-        !args.code && (args.stream || io::stdout().is_terminal()) && !args.no_stream;
+    // Setup MCP servers if provided
+    let mcp_manager = match setup_mcp_manager(&args).await {
+        Ok(m) => m,
+        Err(code) => return code,
+    };
+
+    let should_stream = !args.code
+        && args.schema.is_none()
+        && (args.stream || io::stdout().is_terminal())
+        && !args.no_stream;
 
     let req = GenerateRequest {
-        prompt: prompt_text,
+        prompt: prompt_text.clone(),
         system_prompt: if system_instructions.is_empty() {
             None
         } else {
-            Some(system_instructions)
+            Some(system_instructions.clone())
         },
         messages: messages.clone(),
         temperature: args.temperature,
@@ -692,8 +731,32 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             permissive: args.permissive,
         };
 
-        let active_messages =
-            messages.unwrap_or_else(|| vec![crate::core::models::OpenAIMessage::user(&req.prompt)]);
+        let mut active_messages = messages.unwrap_or_else(|| {
+            let mut msgs = Vec::new();
+            if !system_instructions.is_empty() {
+                msgs.push(crate::core::models::OpenAIMessage::system(
+                    &system_instructions,
+                ));
+            }
+            msgs.push(crate::core::models::OpenAIMessage::user(&prompt_text));
+            msgs
+        });
+
+        if args.messages.is_some() && !system_instructions.is_empty() {
+            if let Some(sys_msg) = active_messages.iter_mut().find(|m| m.role == "system") {
+                let current = sys_msg.text_content();
+                *sys_msg = crate::core::models::OpenAIMessage::system(format!(
+                    "{}\n\n{}",
+                    current, system_instructions
+                ));
+            } else {
+                active_messages.insert(
+                    0,
+                    crate::core::models::OpenAIMessage::system(&system_instructions),
+                );
+            }
+        }
+
         let t_start = Instant::now();
         let res = match session_mgr
             .process_messages(
@@ -716,6 +779,75 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
 
         let mut content = res.content;
         let mut finish_reason = res.finish_reason;
+        let mut all_tool_logs = res.tool_log;
+
+        if let Some(schema) = &schema_ir {
+            let max_retries = 2;
+            let mut attempts = 0;
+            let mut validation_err;
+
+            loop {
+                match SchemaParser::validate(schema, &content) {
+                    Ok(_) => {
+                        validation_err = None;
+                        break;
+                    }
+                    Err(err) => {
+                        validation_err = Some(err.clone());
+                        if attempts >= max_retries {
+                            break;
+                        }
+                        attempts += 1;
+                        active_messages
+                            .push(crate::core::models::OpenAIMessage::assistant(&content));
+                        let repair_prompt = format!(
+                            "Your previous response did not adhere to the required JSON schema. Error: {}.\nPlease respond ONLY with valid JSON conforming to the schema.",
+                            err
+                        );
+                        active_messages
+                            .push(crate::core::models::OpenAIMessage::user(&repair_prompt));
+
+                        match session_mgr
+                            .process_messages(
+                                &active_messages,
+                                None,
+                                &config,
+                                args.temperature,
+                                args.top_p,
+                                args.max_tokens,
+                                args.seed,
+                            )
+                            .await
+                        {
+                            Ok(next_res) => {
+                                content = next_res.content;
+                                finish_reason = next_res.finish_reason;
+                                all_tool_logs.extend(next_res.tool_log);
+                            }
+                            Err(e) => {
+                                eprintln!("{}: {}", "Error".red().bold(), e);
+                                return e.exit_code();
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(err) = validation_err {
+                if args.require_complete {
+                    if !args.quiet {
+                        eprintln!("Schema validation failed after retries: {}", err);
+                    }
+                    return ApfelExitCodes::INCOMPLETE_RESPONSE;
+                } else if !args.quiet {
+                    eprintln!(
+                        "{}: Model response did not conform to schema: {}",
+                        "Warning".yellow().bold(),
+                        err
+                    );
+                }
+            }
+        }
 
         // Apply stop sequence truncation if requested
         if !args.stop.is_empty() {
@@ -757,7 +889,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                             "content": extracted.content.trim_end_matches('\n'),
                             "language": extracted.language,
                             "finish_reason": finish_reason,
-                            "tools_executed": res.tool_log
+                            "tools_executed": all_tool_logs
                         });
                         println!("{}", serde_json::to_string_pretty(&json).unwrap());
                     } else {
@@ -772,7 +904,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                             "language": null,
                             "finish_reason": finish_reason,
                             "error": e.to_string(),
-                            "tools_executed": res.tool_log
+                            "tools_executed": all_tool_logs
                         });
                         println!("{}", serde_json::to_string_pretty(&json).unwrap());
                     } else if !args.quiet {
@@ -785,7 +917,7 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             let json = serde_json::json!({
                 "content": content,
                 "finish_reason": finish_reason,
-                "tools_executed": res.tool_log
+                "tools_executed": all_tool_logs
             });
             println!("{}", serde_json::to_string_pretty(&json).unwrap());
             ApfelExitCodes::SUCCESS

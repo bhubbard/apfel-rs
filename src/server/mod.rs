@@ -25,10 +25,7 @@ pub async fn run_server(
     engine: Arc<dyn BackendEngine>,
     mcp_manager: Option<Arc<MCPManager>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app_state = handlers::AppState {
-        engine: engine.clone(),
-        mcp_manager,
-    };
+    let app_state = handlers::AppState::new(engine.clone(), mcp_manager);
 
     let security_config = Arc::new(middleware::ServerSecurityConfig {
         allowed_origins: allowed_origins.clone(),

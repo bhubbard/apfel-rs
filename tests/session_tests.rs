@@ -58,9 +58,10 @@ async fn test_session_manager_context_overflow() {
         OpenAIMessage::user("User question"),
     ];
 
-    let mut config = ContextConfig::default();
-    // Reserve all tokens so budget is 0
-    config.output_reserve = 5000;
+    let config = ContextConfig {
+        output_reserve: 5000,
+        ..Default::default()
+    };
 
     let res = mgr
         .process_messages(&messages, None, &config, None, None, None, None)

@@ -96,8 +96,8 @@ pub struct CliArgs {
     #[arg(long = "strict")]
     pub strict: bool,
 
-    /// JSON schema file path for structured output
-    #[arg(long = "schema", value_name = "FILE")]
+    /// Path to a JSON Schema file or raw JSON schema string for structured output enforcement
+    #[arg(long = "schema", value_name = "SCHEMA")]
     pub schema: Option<String>,
 
     /// JSON conversation file path or '-' for stdin
@@ -172,6 +172,10 @@ pub struct CliArgs {
     /// Connect to external MCP server (command path or script, repeatable)
     #[arg(long = "mcp-server", value_name = "COMMAND")]
     pub mcp_servers: Vec<String>,
+
+    /// Path to Model Context Protocol (MCP) configuration JSON file
+    #[arg(long = "mcp-config", value_name = "PATH")]
+    pub mcp_config: Option<String>,
 
     /// Run local latency and throughput benchmark
     #[arg(long = "benchmark")]

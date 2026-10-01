@@ -21,7 +21,7 @@ async fn test_batch_processing_prompt_stream() {
     let reader = Cursor::new(input_jsonl.as_bytes());
     let mut out_buffer = Vec::new();
 
-    let args = CliArgs::parse_from(&["apfel", "--batch"]);
+    let args = CliArgs::parse_from(["apfel", "--batch"]);
     let exit_code = run_batch_stream(reader, &mut out_buffer, args, mock).await;
 
     assert_eq!(exit_code, ApfelExitCodes::SUCCESS);
@@ -52,7 +52,7 @@ async fn test_batch_processing_messages_stream() {
     let reader = Cursor::new(input_jsonl.as_bytes());
     let mut out_buffer = Vec::new();
 
-    let args = CliArgs::parse_from(&["apfel", "--batch"]);
+    let args = CliArgs::parse_from(["apfel", "--batch"]);
     let exit_code = run_batch_stream(reader, &mut out_buffer, args, mock).await;
 
     assert_eq!(exit_code, ApfelExitCodes::SUCCESS);
@@ -81,7 +81,7 @@ async fn test_batch_processing_malformed_and_error_lines() {
     let reader = Cursor::new(input_jsonl.as_bytes());
     let mut out_buffer = Vec::new();
 
-    let args = CliArgs::parse_from(&["apfel", "--batch"]);
+    let args = CliArgs::parse_from(["apfel", "--batch"]);
     let exit_code = run_batch_stream(reader, &mut out_buffer, args, mock).await;
 
     // Must yield RUNTIME_ERROR (exit code 1) on any line failure

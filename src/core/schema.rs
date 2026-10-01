@@ -38,6 +38,126 @@ pub enum SchemaIR {
     },
 }
 
+impl SchemaIR {
+    /// Validates a serde_json::Value against this SchemaIR definition.
+    pub fn validate_value(&self, value: &serde_json::Value) -> Result<(), String> {
+        match self {
+            SchemaIR::Object {
+                name, properties, ..
+            } => {
+                let obj = value.as_object().ok_or_else(|| {
+                    format!(
+                        "Expected object for '{}', found {}",
+                        name,
+                        json_type_name(value)
+                    )
+                })?;
+
+                for prop in properties {
+                    match obj.get(&prop.name) {
+                        Some(val) => {
+                            if val.is_null() {
+                                if !prop.is_optional {
+                                    return Err(format!(
+                                        "Required property '{}' cannot be null",
+                                        prop.name
+                                    ));
+                                }
+                            } else {
+                                prop.schema
+                                    .validate_value(val)
+                                    .map_err(|e| format!("Property '{}': {}", prop.name, e))?;
+                            }
+                        }
+                        None => {
+                            if !prop.is_optional {
+                                return Err(format!("Missing required property '{}'", prop.name));
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            SchemaIR::String {
+                name, enum_values, ..
+            } => {
+                let s = value.as_str().ok_or_else(|| {
+                    format!(
+                        "Expected string for '{}', found {}",
+                        name,
+                        json_type_name(value)
+                    )
+                })?;
+                if let Some(enums) = enum_values {
+                    if !enums.iter().any(|e| e == s) {
+                        return Err(format!(
+                            "Value '{}' for '{}' is not one of allowed enum values: {:?}",
+                            s, name, enums
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            SchemaIR::Integer { name, .. } => {
+                if !value.is_i64() && !value.is_u64() {
+                    return Err(format!(
+                        "Expected integer for '{}', found {}",
+                        name,
+                        json_type_name(value)
+                    ));
+                }
+                Ok(())
+            }
+            SchemaIR::Number { name, .. } => {
+                if !value.is_number() {
+                    return Err(format!(
+                        "Expected number for '{}', found {}",
+                        name,
+                        json_type_name(value)
+                    ));
+                }
+                Ok(())
+            }
+            SchemaIR::Bool { name, .. } => {
+                if !value.is_boolean() {
+                    return Err(format!(
+                        "Expected boolean for '{}', found {}",
+                        name,
+                        json_type_name(value)
+                    ));
+                }
+                Ok(())
+            }
+            SchemaIR::Array { item_name, items } => {
+                let arr = value.as_array().ok_or_else(|| {
+                    format!(
+                        "Expected array for '{}', found {}",
+                        item_name,
+                        json_type_name(value)
+                    )
+                })?;
+                for (i, item) in arr.iter().enumerate() {
+                    items
+                        .validate_value(item)
+                        .map_err(|e| format!("Item [{}] in array '{}': {}", i, item_name, e))?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn json_type_name(val: &serde_json::Value) -> &'static str {
+    match val {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 /// Metadata and schema definition for an object property in SchemaIR.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyIR {
@@ -53,6 +173,15 @@ pub struct SchemaParser;
 
 impl SchemaParser {
     pub const MAX_SCHEMA_DEPTH: usize = 64;
+
+    /// Validates a raw JSON string against a parsed SchemaIR, stripping code fences if needed.
+    pub fn validate(schema: &SchemaIR, json_str: &str) -> Result<serde_json::Value, String> {
+        let stripped = crate::core::json_stripper::JSONFenceStripper::strip(json_str);
+        let val: serde_json::Value =
+            serde_json::from_str(stripped).map_err(|e| format!("Invalid JSON: {}", e))?;
+        schema.validate_value(&val)?;
+        Ok(val)
+    }
 
     pub fn parse(json_str: &str, root_name: &str) -> Result<SchemaIR, ApfelError> {
         let val: serde_json::Value = serde_json::from_str(json_str)

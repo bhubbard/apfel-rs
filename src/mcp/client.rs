@@ -6,7 +6,7 @@
 use crate::core::error::ApfelError;
 use crate::core::models::OpenAITool;
 use crate::core::security::scrub_mcp_environment;
-use crate::mcp::protocol::MCPProtocol;
+use crate::mcp::protocol::{MCPProtocol, McpConfig, McpServerConfig};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -97,6 +97,89 @@ impl MCPConnection {
         };
 
         // Initialize handshake
+        let mut conn = conn;
+        conn.handshake().await?;
+        Ok(conn)
+    }
+
+    pub async fn spawn_server(
+        name: &str,
+        config: &McpServerConfig,
+        timeout_secs: u64,
+    ) -> Result<Self, ApfelError> {
+        let mut cmd = if config.command.ends_with(".py") {
+            let mut c = Command::new("python3");
+            c.arg(&config.command);
+            for arg in &config.args {
+                c.arg(arg);
+            }
+            c
+        } else {
+            let parts: Vec<&str> = config.command.split_whitespace().collect();
+            if parts.is_empty() {
+                return Err(ApfelError::MCP(format!(
+                    "Empty command for MCP server '{}'",
+                    name
+                )));
+            }
+            let mut c = Command::new(parts[0]);
+            for arg in &parts[1..] {
+                c.arg(arg);
+            }
+            for arg in &config.args {
+                c.arg(arg);
+            }
+            c
+        };
+
+        // Clean parent env to avoid leaking sensitive tokens
+        let parent_env: HashMap<String, String> = std::env::vars().collect();
+        let mut scrubbed = scrub_mcp_environment(&parent_env);
+        for (k, v) in &config.env {
+            scrubbed.insert(k.clone(), v.clone());
+        }
+        cmd.env_clear();
+        cmd.envs(scrubbed);
+
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::null());
+
+        let mut child = cmd.spawn().map_err(|e| {
+            ApfelError::MCP(format!(
+                "Failed to spawn MCP server '{}' (command '{}'): {}",
+                name, config.command, e
+            ))
+        })?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ApfelError::MCP("Failed to open child stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ApfelError::MCP("Failed to open child stdout".to_string()))?;
+
+        let reader = BufReader::new(stdout);
+        let timeout_duration = Duration::from_secs(timeout_secs.max(1));
+
+        let command_path = if config.args.is_empty() {
+            config.command.clone()
+        } else {
+            format!("{} {}", config.command, config.args.join(" "))
+        };
+
+        let conn = Self {
+            command_path,
+            tools: Vec::new(),
+            stdin: Mutex::new(stdin),
+            reader: Mutex::new(reader),
+            child: Mutex::new(child),
+            next_id: AtomicUsize::new(1),
+            timeout_duration,
+        };
+
         let mut conn = conn;
         conn.handshake().await?;
         Ok(conn)
@@ -219,6 +302,42 @@ impl MCPManager {
             conns.push(Arc::new(conn));
         }
         Ok(Self { connections: conns })
+    }
+
+    pub async fn load_config(config: &McpConfig, timeout_secs: u64) -> Result<Self, ApfelError> {
+        let mut conns = Vec::new();
+        let mut servers: Vec<(String, McpServerConfig)> =
+            config.all_servers().into_iter().collect();
+        servers.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (name, srv_config) in servers {
+            let conn = MCPConnection::spawn_server(&name, &srv_config, timeout_secs).await?;
+            conns.push(Arc::new(conn));
+        }
+        Ok(Self { connections: conns })
+    }
+
+    pub async fn load_config_file(
+        path: impl AsRef<std::path::Path>,
+        timeout_secs: u64,
+    ) -> Result<Self, ApfelError> {
+        let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+            ApfelError::MCP(format!(
+                "Failed to read MCP config file '{}': {}",
+                path.as_ref().display(),
+                e
+            ))
+        })?;
+        let config = McpConfig::parse(&content)?;
+        Self::load_config(&config, timeout_secs).await
+    }
+
+    pub fn into_connections(self) -> Vec<Arc<MCPConnection>> {
+        self.connections
+    }
+
+    pub fn from_connections(connections: Vec<Arc<MCPConnection>>) -> Self {
+        Self { connections }
     }
 
     pub fn all_tools(&self) -> Vec<OpenAITool> {

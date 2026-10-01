@@ -1,10 +1,10 @@
 class Apfel < Formula
-  desc "Apple Intelligence & Foundation Models CLI and OpenAI-compatible server"
-  homepage "https://github.com/bhubbard/apfel-rs"
-  url "https://github.com/bhubbard/apfel-rs/archive/refs/tags/v0.1.1.tar.gz"
-  sha256 "3c4fca0b5946cb48f87cc81df4a24e563bee401e929721baac116099beb2ca7f"
+  desc "High-performance on-device AI CLI & drop-in OpenAI local inference server for Apple Silicon"
+  homepage "https://github.com/Arthur-Ficial/apfel"
+  url "https://github.com/Arthur-Ficial/apfel/archive/refs/tags/v0.1.3.tar.gz"
+  sha256 "d5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed"
   license "MIT"
-  head "https://github.com/bhubbard/apfel-rs.git", branch: "main"
+  head "https://github.com/Arthur-Ficial/apfel.git", branch: "main"
 
   depends_on "rust" => :build
   depends_on arch: :arm64
@@ -37,7 +37,7 @@ class Apfel < Formula
   end
 
   test do
-    assert_match "apfel v", shell_output("#{bin}/apfel --version")
-    assert_match "apple-foundationmodel", shell_output("#{bin}/apfel --model-info")
+    assert_match "apfel", shell_output("#{bin}/apfel --version")
+    assert_match "Engine", shell_output("#{bin}/apfel --model-info")
   end
 end

@@ -68,12 +68,22 @@ Rigorous stress testing conducted on Apple Silicon (macOS Sequoia) comparing the
 ## Installation & Setup
 
 ### 1. Homebrew (macOS Recommended)
-Install via the official tap (`bhubbard/tap`):
+
+Install via Homebrew tap:
 
 ```bash
-# Tap and install in one step
-brew install bhubbard/tap/apfel-rs
+# Install via Homebrew
+brew tap Arthur-Ficial/tap
+brew install apfel
+```
 
+Or tap and install `apfel-rs` directly:
+```bash
+brew install bhubbard/tap/apfel-rs
+```
+
+Verify availability and system models:
+```bash
 # Command is now available globally with automatic shell completions
 apfel --model-info
 ```
@@ -81,26 +91,52 @@ apfel --model-info
 Run as a persistent background daemon (starts automatically on login):
 ```bash
 # Start background server on localhost:32185
-brew services start apfel-rs
+brew services start apfel
 
 # Check server status
-brew services info apfel-rs
+brew services info apfel
 
 # View live daemon logs
 tail -f /opt/homebrew/var/log/apfel.log
 
 # Stop background server
-brew services stop apfel-rs
+brew services stop apfel
 ```
 
-### 2. Instant Run via NPX (Zero Setup)
+### 2. Manual Release Binary (Pre-built Apple Silicon)
+
+Download pre-compiled optimized binaries and checksums directly from GitHub Releases:
+
+```bash
+# Set release tag
+VERSION="v0.1.3"
+
+# Download binary archive and SHA256 checksum
+curl -LO "https://github.com/Arthur-Ficial/apfel/releases/download/${VERSION}/apfel-${VERSION}-aarch64-apple-darwin.tar.gz"
+curl -LO "https://github.com/Arthur-Ficial/apfel/releases/download/${VERSION}/apfel-${VERSION}-aarch64-apple-darwin.tar.gz.sha256"
+
+# Verify SHA256 checksum integrity
+shasum -a 256 -c "apfel-${VERSION}-aarch64-apple-darwin.tar.gz.sha256"
+
+# Extract archive
+tar -xzf "apfel-${VERSION}-aarch64-apple-darwin.tar.gz"
+
+# Install binary to system PATH
+sudo install -d -m 0755 /usr/local/bin
+sudo install -m 0755 apfel /usr/local/bin/apfel
+
+# Verify installation
+apfel --version
+```
+
+### 3. Instant Run via NPX (Zero Setup)
 No Rust or Xcode installation required — runs the bundled Apple Silicon binary immediately:
 
 ```bash
 npx apfel-rs "Explain quantum computing in one sentence"
 ```
 
-### 3. Global Install via NPM
+### 4. Global Install via NPM
 ```bash
 npm install -g apfel-rs
 
@@ -108,7 +144,7 @@ npm install -g apfel-rs
 apfel --stream "Write a haiku about compiling Rust"
 ```
 
-### 4. Install via Cargo (crates.io)
+### 5. Install via Cargo (crates.io)
 ```bash
 cargo install apfel-rs
 
@@ -116,7 +152,7 @@ cargo install apfel-rs
 apfel --model-info
 ```
 
-### 5. Building from Source
+### 6. Building from Source
 **Prerequisites**: macOS Sequoia (26.0+) on Apple Silicon with Xcode Command Line Tools.
 
 ```bash
