@@ -197,6 +197,30 @@ pub struct CliArgs {
     #[arg(long = "install-completions")]
     pub install_completions: bool,
 
+    /// Run with atomic APFS Copy-on-Write sandbox snapshot (auto-reverts on failure)
+    #[arg(long = "apfs-sandbox")]
+    pub apfs_sandbox: bool,
+
+    /// Enable Secure Enclave zero-knowledge secret sanitization proxy
+    #[arg(long = "guard")]
+    pub guard: bool,
+
+    /// Execute command with speculative shadow compiler real-time healing
+    #[arg(long = "shadow", value_name = "COMMAND")]
+    pub shadow: Option<String>,
+
+    /// Enable battery and thermal-aware dynamic scheduling (modulates ANE vs Metal GPU)
+    #[arg(long = "adaptive-power")]
+    pub adaptive_power: bool,
+
+    /// Launch zero-copy POSIX shared memory buffer server with specified name
+    #[arg(long = "shm-server", value_name = "NAME")]
+    pub shm_server: Option<String>,
+
+    /// Run command and intercept non-zero exit faults with automated micro-agent repair
+    #[arg(long = "trap", value_name = "COMMAND")]
+    pub trap_cmd: Option<String>,
+
     /// Explicit CLI flag tokens passed by the user (used to disambiguate env var fallbacks)
     #[arg(skip)]
     pub explicit_cli_args: Option<Vec<String>>,

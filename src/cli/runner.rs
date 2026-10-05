@@ -32,6 +32,37 @@ pub async fn run_cli(args: CliArgs) -> i32 {
 
 /// Executes the apfel CLI with a specified backend engine.
 pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
+    let sandbox = if args.apfs_sandbox {
+        match crate::core::apfs::ApfsSandbox::begin(".") {
+            Ok(sb) => Some(sb),
+            Err(e) => {
+                eprintln!("{}: Failed to initialize APFS sandbox: {}", "Error".red().bold(), e);
+                return ApfelExitCodes::RUNTIME_ERROR;
+            }
+        }
+    } else {
+        None
+    };
+
+    let exit_code = run_cli_dispatch(args, engine).await;
+
+    if let Some(mut sb) = sandbox {
+        if exit_code == ApfelExitCodes::SUCCESS {
+            sb.commit();
+        } else {
+            eprintln!(
+                "{}: Non-zero exit code ({}), auto-reverting sandbox changes...",
+                "APFS Sandbox".yellow().bold(),
+                exit_code
+            );
+            let _ = sb.rollback();
+        }
+    }
+
+    exit_code
+}
+
+async fn run_cli_dispatch(mut args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     if args.no_color {
         colored::control::set_override(false);
     }
@@ -232,6 +263,42 @@ pub async fn run_cli_with_engine(args: CliArgs, engine: Arc<dyn BackendEngine>) 
             );
             return ApfelExitCodes::USAGE_ERROR;
         }
+    }
+
+    // 0.05 Adaptive Power & Thermal Profiling
+    if args.adaptive_power {
+        let power = crate::core::thermal::PowerThermalMonitor::current_power_source();
+        let thermal = crate::core::thermal::PowerThermalMonitor::current_thermal_state();
+        let profile = crate::core::thermal::PowerThermalMonitor::resolve_optimal_profile();
+        if !args.quiet {
+            eprintln!(
+                "{}: power={:?}, thermal={:?} -> profile={:?}, threads={}, ceiling={}",
+                "Adaptive Power".cyan().bold(),
+                power,
+                thermal,
+                profile,
+                profile.worker_threads(),
+                profile.context_token_ceiling()
+            );
+        }
+        if args.max_tokens.is_none() {
+            args.max_tokens = Some(profile.context_token_ceiling());
+        }
+    }
+
+    // 0.06 Zero-Copy POSIX Shared Memory Server
+    if let Some(shm_name) = &args.shm_server {
+        return run_shm_server_mode(shm_name, engine).await;
+    }
+
+    // 0.07 Speculative Shadow Compiler Execution
+    if let Some(cmd) = &args.shadow {
+        return run_shadow_compiler_mode(cmd, engine).await;
+    }
+
+    // 0.08 Fault Trap & Micro-Agent Interception
+    if let Some(cmd) = &args.trap_cmd {
+        return run_fault_trap_mode(cmd, engine).await;
     }
 
     // 0. Completions Generator
@@ -814,10 +881,23 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         Err(code) => return code,
     };
 
+    // Apply Apfel Guard PII/secret scrubbing proxy if requested
+    let (prompt_text, guard) = if args.guard {
+        let g = crate::core::guard::ApfelGuard::new();
+        let (scrubbed, count) = g.sanitize(&prompt_text);
+        if count > 0 && !args.quiet {
+            eprintln!("{}: Scrubbed {} sensitive tokens/PII from input stream", "Apfel Guard".green().bold(), count);
+        }
+        (scrubbed, Some(g))
+    } else {
+        (prompt_text, None)
+    };
+
     let should_stream = !args.code
         && args.schema.is_none()
         && (args.stream || io::stdout().is_terminal())
-        && !args.no_stream;
+        && !args.no_stream
+        && guard.is_none();
 
     let req = GenerateRequest {
         prompt: prompt_text.clone(),
@@ -953,6 +1033,10 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         let mut content = res.content;
         let mut finish_reason = res.finish_reason;
         let mut all_tool_logs = res.tool_log;
+
+        if let Some(ref g) = guard {
+            content = g.de_anonymize(&content);
+        }
 
         if let Some(schema) = &schema_ir {
             let max_retries = 2;
@@ -1097,6 +1181,156 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
         } else {
             println!("{}", content);
             ApfelExitCodes::SUCCESS
+        }
+    }
+}
+
+async fn run_shm_server_mode(shm_name: &str, engine: Arc<dyn BackendEngine>) -> i32 {
+    let shm = match crate::core::shm::ShmBuffer::create(shm_name, 64 * 1024) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{}: Failed to initialize shared memory buffer '{}': {}", "SHM Error".red().bold(), shm_name, e);
+            return ApfelExitCodes::RUNTIME_ERROR;
+        }
+    };
+    println!("apfel-shm server listening on segment '{}' (capacity 64KB)", shm_name);
+    println!("Waiting for zero-copy client requests (Ctrl+C to stop)...");
+
+    let mut last_seq = 0;
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        let seq = shm.sequence();
+        if seq > last_seq {
+            let payload = shm.read_payload();
+            if !payload.is_empty() {
+                let prompt = String::from_utf8_lossy(&payload).to_string();
+                let req = GenerateRequest {
+                    prompt,
+                    system_prompt: None,
+                    messages: None,
+                    temperature: Some(0.0),
+                    top_p: None,
+                    max_tokens: Some(1024),
+                    permissive: false,
+                    seed: None,
+                    use_case: None,
+                };
+                match engine.generate(&req) {
+                    Ok(res) => {
+                        let _ = shm.write_payload(res.content.as_bytes());
+                        last_seq = shm.sequence();
+                    }
+                    Err(e) => {
+                        let err_msg = format!("Error: {}", e);
+                        let _ = shm.write_payload(err_msg.as_bytes());
+                        last_seq = shm.sequence();
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn run_shadow_compiler_mode(cmd: &str, _engine: Arc<dyn BackendEngine>) -> i32 {
+    println!("{}", format!("Starting speculative shadow compiler: {}", cmd).cyan().bold());
+    let shadow = crate::core::shadow_compiler::ShadowCompiler::new();
+    match shadow.execute_and_shadow(cmd, None).await {
+        Ok(exit_code) => {
+            let faults = shadow.get_faults().await;
+            let fixes = shadow.get_fixes().await;
+            if faults.is_empty() && exit_code == 0 {
+                println!("{}", "Compilation completed cleanly with zero diagnostics.".green().bold());
+                ApfelExitCodes::SUCCESS
+            } else {
+                println!(
+                    "{}",
+                    format!("Captured {} compiler diagnostic(s) during build. Synthesized {} speculative fix candidates:", faults.len(), fixes.len())
+                        .yellow()
+                        .bold()
+                );
+                for fix in &fixes {
+                    println!("\n----------------------------------------");
+                    println!("{}: {:?}", "Fault Category".red().bold(), fix.fault.category);
+                    if let Some(target) = &fix.fault.target_file {
+                        println!("Target: {}:{}:{}", target.display(), fix.fault.line_number.unwrap_or(0), fix.fault.column_number.unwrap_or(0));
+                    }
+                    if let Some(patch) = &fix.candidate_patch {
+                        println!("{}", "Speculative Fix Proposal:".green().bold());
+                        println!("{}", patch);
+                    }
+                }
+                if exit_code != 0 {
+                    exit_code
+                } else {
+                    ApfelExitCodes::SUCCESS
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("{}: {}", "Shadow compiler execution error".red().bold(), e);
+            ApfelExitCodes::RUNTIME_ERROR
+        }
+    }
+}
+
+async fn run_fault_trap_mode(cmd: &str, engine: Arc<dyn BackendEngine>) -> i32 {
+    println!("{}", format!("Executing under kernel/process fault trap: {}", cmd).cyan().bold());
+    let output = match std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+    {
+        Ok(out) => out,
+        Err(e) => {
+            eprintln!("{}: Failed to spawn command: {}", "Fault Trap Error".red().bold(), e);
+            return ApfelExitCodes::RUNTIME_ERROR;
+        }
+    };
+
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if exit_code == 0 {
+        print!("{}", stdout);
+        return ApfelExitCodes::SUCCESS;
+    }
+
+    println!("{}", format!("Trapped non-zero exit code ({})", exit_code).red().bold());
+    let fault = match crate::core::fault_trap::TrappedFault::from_output(&output) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("{}: {}", "Failed to parse trapped fault".red().bold(), e);
+            return exit_code;
+        }
+    };
+    println!("Trapped Fault Category: {:?}", fault.category);
+    if let Some(file) = &fault.target_file {
+        println!("Fault Location: {}:{}:{}", file.display(), fault.line_number.unwrap_or(0), fault.column_number.unwrap_or(0));
+    }
+    println!("\nGenerating automated micro-agent healing patch via on-device engine...\n");
+
+    let repair_prompt = fault.to_micro_agent_prompt();
+    let req = GenerateRequest {
+        prompt: repair_prompt,
+        system_prompt: Some("You are an autonomous micro-agent repair assistant. Provide a concise, targeted code fix.".to_string()),
+        messages: None,
+        temperature: Some(0.1),
+        top_p: None,
+        max_tokens: Some(1024),
+        permissive: false,
+        seed: None,
+        use_case: None,
+    };
+
+    match engine.generate(&req) {
+        Ok(res) => {
+            println!("{}", "Micro-Agent Proposed Patch:".green().bold());
+            println!("{}", res.content);
+            exit_code
+        }
+        Err(e) => {
+            eprintln!("{}: {}", "Engine repair generation failed".red().bold(), e);
+            exit_code
         }
     }
 }
