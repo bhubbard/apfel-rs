@@ -3,3 +3,6 @@ bin/apfel-bin
 *.tgz
 coverage_report
 target/coverage
+baseline*.json
+.benchmarks/
+

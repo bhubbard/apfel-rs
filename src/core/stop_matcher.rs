@@ -109,7 +109,7 @@ impl StopSequenceMatcher {
         } else {
             // Buffer has an ambiguous suffix of length `max_prefix_len`.
             let safe_len = self.buffer.len().saturating_sub(max_prefix_len);
-            if safe_len > 0 {
+            if safe_len > 0 && self.buffer.is_char_boundary(safe_len) {
                 let emit_str = self.buffer[..safe_len].to_string();
                 self.buffer.drain(..safe_len);
                 StopMatchResult::Emit(emit_str)
@@ -133,7 +133,11 @@ impl StopSequenceMatcher {
         for seq in &self.sequences {
             let max_possible = text.len().min(seq.len().saturating_sub(1));
             for len in (1..=max_possible).rev() {
-                let suffix = &text[text.len() - len..];
+                let start_idx = text.len() - len;
+                if !text.is_char_boundary(start_idx) {
+                    continue;
+                }
+                let suffix = &text[start_idx..];
                 if seq.starts_with(suffix) {
                     if len > max_len {
                         max_len = len;

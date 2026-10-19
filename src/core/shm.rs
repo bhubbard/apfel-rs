@@ -58,17 +58,25 @@ unsafe impl Sync for ShmBuffer {}
 impl ShmBuffer {
     /// Sanitizes and bounds the shared memory segment name for POSIX/macOS compatibility.
     pub fn sanitize_name(name: &str) -> String {
-        let trimmed = name.trim_start_matches('/');
+        let clean: String = name
+            .chars()
+            .filter(|&c| c != '\0' && c != '/')
+            .collect();
+        let effective = if clean.is_empty() {
+            "apfel_ipc"
+        } else {
+            &clean
+        };
         // macOS limits shm_open names to 30 characters (including leading '/')
         let max_len = 29;
-        let safe_core = if trimmed.len() > max_len {
+        let safe_core = if effective.len() > max_len {
             let mut end = max_len;
-            while end > 0 && !trimmed.is_char_boundary(end) {
+            while end > 0 && !effective.is_char_boundary(end) {
                 end -= 1;
             }
-            &trimmed[..end]
+            &effective[..end]
         } else {
-            trimmed
+            effective
         };
         format!("/{}", safe_core)
     }
@@ -220,6 +228,16 @@ impl ShmBuffer {
     /// Reads the current sequence number atomically.
     pub fn sequence(&self) -> u64 {
         self.header().sequence.load(Ordering::Acquire)
+    }
+
+    /// Returns a raw const pointer to the start of the shared memory mapping.
+    pub fn as_ptr(&self) -> *const u8 {
+        self.ptr
+    }
+
+    /// Returns a raw mutable pointer to the start of the shared memory mapping.
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.ptr
     }
 }
 
