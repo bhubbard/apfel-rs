@@ -43,6 +43,14 @@ pub async fn run_batch_mode(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i3
     run_batch_stream(stdin.lock(), stdout.lock(), args, engine).await
 }
 
+#[inline]
+fn write_batch_record<W: Write>(out: &mut W, rec: &BatchOutputRecord) {
+    if serde_json::to_writer(&mut *out, rec).is_ok() {
+        let _ = out.write_all(b"\n");
+        let _ = out.flush();
+    }
+}
+
 /// Core stream processor for --batch mode taking any BufRead and Write handles.
 pub async fn run_batch_stream<R: BufRead, W: Write>(
     mut reader: R,
@@ -93,41 +101,37 @@ pub async fn run_batch_stream<R: BufRead, W: Write>(
                     finish_reason: Some("error".to_string()),
                     error: Some(format!("Invalid JSON line: {}", e)),
                 };
-                if let Ok(json_str) = serde_json::to_string(&out_err) {
-                    let _ = writeln!(out_handle, "{}", json_str);
-                    let _ = out_handle.flush();
-                }
+                write_batch_record(&mut out_handle, &out_err);
                 continue;
             }
         };
 
-        // Validate that exactly one of prompt or messages is provided
-        let active_messages = match (&record.prompt, &record.messages) {
+        let custom_id = record.custom_id;
+
+        // Validate that exactly one of prompt or messages is provided (move without cloning)
+        let active_messages = match (record.prompt, record.messages) {
             (Some(p), None) => vec![OpenAIMessage::user(p)],
             (None, Some(m)) => {
                 if m.is_empty() {
                     any_failure = true;
                     let out_err = BatchOutputRecord {
                         line: line_number,
-                        custom_id: record.custom_id,
+                        custom_id,
                         status: "error".to_string(),
                         content: None,
                         finish_reason: Some("error".to_string()),
                         error: Some("Record messages array cannot be empty".to_string()),
                     };
-                    if let Ok(json_str) = serde_json::to_string(&out_err) {
-                        let _ = writeln!(out_handle, "{}", json_str);
-                        let _ = out_handle.flush();
-                    }
+                    write_batch_record(&mut out_handle, &out_err);
                     continue;
                 }
-                m.clone()
+                m
             }
             (Some(_), Some(_)) => {
                 any_failure = true;
                 let out_err = BatchOutputRecord {
                     line: line_number,
-                    custom_id: record.custom_id,
+                    custom_id,
                     status: "error".to_string(),
                     content: None,
                     finish_reason: Some("error".to_string()),
@@ -136,26 +140,20 @@ pub async fn run_batch_stream<R: BufRead, W: Write>(
                             .to_string(),
                     ),
                 };
-                if let Ok(json_str) = serde_json::to_string(&out_err) {
-                    let _ = writeln!(out_handle, "{}", json_str);
-                    let _ = out_handle.flush();
-                }
+                write_batch_record(&mut out_handle, &out_err);
                 continue;
             }
             (None, None) => {
                 any_failure = true;
                 let out_err = BatchOutputRecord {
                     line: line_number,
-                    custom_id: record.custom_id,
+                    custom_id,
                     status: "error".to_string(),
                     content: None,
                     finish_reason: Some("error".to_string()),
                     error: Some("Record must contain either 'prompt' or 'messages'".to_string()),
                 };
-                if let Ok(json_str) = serde_json::to_string(&out_err) {
-                    let _ = writeln!(out_handle, "{}", json_str);
-                    let _ = out_handle.flush();
-                }
+                write_batch_record(&mut out_handle, &out_err);
                 continue;
             }
         };
@@ -181,16 +179,13 @@ pub async fn run_batch_stream<R: BufRead, W: Write>(
             Ok(res) => {
                 let out_rec = BatchOutputRecord {
                     line: line_number,
-                    custom_id: record.custom_id,
+                    custom_id,
                     status: "ok".to_string(),
                     content: Some(res.content),
                     finish_reason: Some(res.finish_reason),
                     error: None,
                 };
-                if let Ok(json_str) = serde_json::to_string(&out_rec) {
-                    let _ = writeln!(out_handle, "{}", json_str);
-                    let _ = out_handle.flush();
-                }
+                write_batch_record(&mut out_handle, &out_rec);
             }
             Err(e) => {
                 if matches!(e, crate::core::error::ApfelError::ModelUnavailable(_)) {
@@ -204,16 +199,13 @@ pub async fn run_batch_stream<R: BufRead, W: Write>(
                 any_failure = true;
                 let out_err = BatchOutputRecord {
                     line: line_number,
-                    custom_id: record.custom_id,
+                    custom_id,
                     status: "error".to_string(),
                     content: None,
                     finish_reason: Some("error".to_string()),
                     error: Some(e.to_string()),
                 };
-                if let Ok(json_str) = serde_json::to_string(&out_err) {
-                    let _ = writeln!(out_handle, "{}", json_str);
-                    let _ = out_handle.flush();
-                }
+                write_batch_record(&mut out_handle, &out_err);
             }
         }
     }

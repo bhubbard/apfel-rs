@@ -193,24 +193,23 @@ public func apfel_bridge_generate_json(
             }
             
             let stream = session.streamResponse(to: finalPrompt, options: options)
-            var prevUtf8ByteCount = 0
+            var lastIndex: String.Index? = nil
+            var totalEmittedBytes = 0
             for try await snapshot in stream {
                 let content = snapshot.content
-                let utf8 = content.utf8
-                let currentByteCount = utf8.count
-                if currentByteCount > prevUtf8ByteCount {
-                    let start = utf8.index(utf8.startIndex, offsetBy: prevUtf8ByteCount)
-                    if let strIndex = start.samePosition(in: content) {
-                        let delta = String(content[strIndex...])
-                        delta.withCString { cStr in
-                            callback(cStr, false, nil, nil, userData)
-                        }
-                        prevUtf8ByteCount = currentByteCount
+                let startIndex = lastIndex ?? content.startIndex
+                let endIndex = content.endIndex
+                if startIndex < endIndex {
+                    let deltaSubstring = content[startIndex..<endIndex]
+                    String(deltaSubstring).withCString { cStr in
+                        callback(cStr, false, nil, nil, userData)
                     }
+                    totalEmittedBytes += deltaSubstring.utf8.count
+                    lastIndex = endIndex
                 }
             }
             
-            let finishReason = (req.max_tokens != nil && prevUtf8ByteCount >= (req.max_tokens! * 3)) ? "length" : "stop"
+            let finishReason = (req.max_tokens != nil && totalEmittedBytes >= (req.max_tokens! * 3)) ? "length" : "stop"
             finishReason.withCString { reason in
                 callback(nil, true, reason, nil, userData)
             }

@@ -39,6 +39,53 @@ impl std::fmt::Debug for MCPConnection {
     }
 }
 
+pub(crate) fn parse_command_line(cmd: &str) -> Result<(String, Vec<String>), ApfelError> {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return Err(ApfelError::MCP("Empty MCP command".to_string()));
+    }
+    // If the path exists as-is on the filesystem (even with spaces), treat as executable with no extra args
+    if std::path::Path::new(trimmed).exists() {
+        return Ok((trimmed.to_string(), Vec::new()));
+    }
+
+    // Parse shell-style tokens respecting single and double quotes
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+
+    for ch in trimmed.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+        } else if ch == '\\' && !in_single_quote {
+            escaped = true;
+        } else if ch == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+        } else if ch == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+        } else if ch.is_whitespace() && !in_single_quote && !in_double_quote {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    if tokens.is_empty() {
+        return Err(ApfelError::MCP("Empty MCP command".to_string()));
+    }
+
+    let program = tokens.remove(0);
+    Ok((program, tokens))
+}
+
 impl MCPConnection {
     pub async fn spawn(command_path: &str, timeout_secs: u64) -> Result<Self, ApfelError> {
         let mut cmd = if command_path.ends_with(".py") {
@@ -46,12 +93,9 @@ impl MCPConnection {
             c.arg(command_path);
             c
         } else {
-            let parts: Vec<&str> = command_path.split_whitespace().collect();
-            if parts.is_empty() {
-                return Err(ApfelError::MCP("Empty MCP command".to_string()));
-            }
-            let mut c = Command::new(parts[0]);
-            for arg in &parts[1..] {
+            let (program, args) = parse_command_line(command_path)?;
+            let mut c = Command::new(program);
+            for arg in args {
                 c.arg(arg);
             }
             c
@@ -114,19 +158,26 @@ impl MCPConnection {
                 c.arg(arg);
             }
             c
-        } else {
-            let parts: Vec<&str> = config.command.split_whitespace().collect();
-            if parts.is_empty() {
+        } else if !config.args.is_empty() {
+            // When args are explicitly provided, command is the executable binary/path intact (preserving spaces)
+            let trimmed = config.command.trim();
+            if trimmed.is_empty() {
                 return Err(ApfelError::MCP(format!(
                     "Empty command for MCP server '{}'",
                     name
                 )));
             }
-            let mut c = Command::new(parts[0]);
-            for arg in &parts[1..] {
+            let mut c = Command::new(trimmed);
+            for arg in &config.args {
                 c.arg(arg);
             }
-            for arg in &config.args {
+            c
+        } else {
+            // Parse command string respecting spaces and shell quoting
+            let (program, args) = parse_command_line(&config.command)
+                .map_err(|_| ApfelError::MCP(format!("Empty command for MCP server '{}'", name)))?;
+            let mut c = Command::new(program);
+            for arg in args {
                 c.arg(arg);
             }
             c
@@ -359,5 +410,29 @@ impl MCPManager {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_command_line_simple() {
+        let (prog, args) = parse_command_line("npx -y @modelcontextprotocol/server-sqlite").unwrap();
+        assert_eq!(prog, "npx");
+        assert_eq!(args, vec!["-y", "@modelcontextprotocol/server-sqlite"]);
+    }
+
+    #[test]
+    fn test_parse_command_line_with_quotes() {
+        let (prog, args) = parse_command_line("\"/Users/bhubbard/PROJECTS/CALL JACOB/server\" --port 3000").unwrap();
+        assert_eq!(prog, "/Users/bhubbard/PROJECTS/CALL JACOB/server");
+        assert_eq!(args, vec!["--port", "3000"]);
+    }
+
+    #[test]
+    fn test_parse_command_line_empty() {
+        assert!(parse_command_line("   ").is_err());
     }
 }

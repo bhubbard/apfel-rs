@@ -3,17 +3,54 @@
 // Part of apfel-rs
 // ============================================================================
 
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
+/// Fast 64-bit FNV-1a hash with zero allocations and no SipHash overhead
 #[inline]
 fn hash_key(text: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in text.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Generational two-tier cache that never drops hot items all at once
+#[derive(Debug)]
+struct GenerationalCache {
+    current: HashMap<u64, usize>,
+    previous: HashMap<u64, usize>,
+    capacity: usize,
+}
+
+impl GenerationalCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            current: HashMap::with_capacity(capacity.min(512)),
+            previous: HashMap::new(),
+            capacity,
+        }
+    }
+
+    #[inline]
+    fn get(&self, key: &u64) -> Option<usize> {
+        self.current
+            .get(key)
+            .copied()
+            .or_else(|| self.previous.get(key).copied())
+    }
+
+    #[inline]
+    fn insert(&mut self, key: u64, count: usize) {
+        if self.current.len() >= self.capacity {
+            self.previous = std::mem::take(&mut self.current);
+            self.current.reserve(self.capacity.min(512));
+        }
+        self.current.insert(key, count);
+    }
 }
 
 /// Tracks observed context window ceilings and caches hashed token counts.
@@ -21,17 +58,18 @@ fn hash_key(text: &str) -> u64 {
 pub struct TokenCounter {
     max_context_seen: AtomicUsize,
     runtime_fell_back: AtomicBool,
-    cache: RwLock<HashMap<u64, usize>>,
+    cache: RwLock<GenerationalCache>,
 }
 
 impl TokenCounter {
     pub const DEFAULT_CONTEXT_FLOOR: usize = 4096;
+    pub const DEFAULT_CACHE_CAPACITY: usize = 4096;
 
     pub fn new() -> Self {
         Self {
             max_context_seen: AtomicUsize::new(Self::DEFAULT_CONTEXT_FLOOR),
             runtime_fell_back: AtomicBool::new(false),
-            cache: RwLock::new(HashMap::new()),
+            cache: RwLock::new(GenerationalCache::new(Self::DEFAULT_CACHE_CAPACITY)),
         }
     }
 
@@ -66,7 +104,7 @@ impl TokenCounter {
 
         // Fast path: read lock
         if let Ok(cache) = self.cache.read() {
-            if let Some(&count) = cache.get(&key) {
+            if let Some(count) = cache.get(&key) {
                 return count;
             }
         }
@@ -74,9 +112,6 @@ impl TokenCounter {
         // Compute and store in cache
         let count = compute_fn(text);
         if let Ok(mut cache) = self.cache.write() {
-            if cache.len() > 2000 {
-                cache.clear(); // Keep bounded memory
-            }
             cache.insert(key, count);
         }
         count

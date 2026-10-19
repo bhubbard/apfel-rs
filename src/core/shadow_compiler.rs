@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
+use crate::backend::engine::{BackendEngine, GenerateRequest};
 use crate::core::fault_trap::TrappedFault;
 
 /// Candidate patch generated speculatively during ongoing compilation.
@@ -41,11 +42,22 @@ impl ShadowCompiler {
         }
     }
 
-    /// Spawns the compiler command and streams stderr incrementally.
+    /// Spawns the compiler command and streams stderr incrementally without LLM synthesis.
     pub async fn execute_and_shadow(
         &self,
         command_line: &str,
         cwd: Option<PathBuf>,
+    ) -> Result<i32, std::io::Error> {
+        self.execute_and_shadow_with_engine(command_line, cwd, None).await
+    }
+
+    /// Spawns the compiler command, streams stdout and stderr incrementally (preventing pipe deadlocks),
+    /// and uses the LLM engine to synthesize speculative micro-agent fixes concurrently.
+    pub async fn execute_and_shadow_with_engine(
+        &self,
+        command_line: &str,
+        cwd: Option<PathBuf>,
+        engine: Option<Arc<dyn BackendEngine>>,
     ) -> Result<i32, std::io::Error> {
         let start_time = std::time::Instant::now();
         info!(cmd = %command_line, "Launching shadow compiler process");
@@ -57,6 +69,15 @@ impl ShadowCompiler {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
+
+        // Drain stdout asynchronously to avoid pipe buffer deadlock (>64KB buffer limit)
+        let stdout = child.stdout.take().expect("Failed to open stdout pipe");
+        let stdout_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                println!("{}", line);
+            }
+        });
 
         let stderr = child.stderr.take().expect("Failed to open stderr pipe");
         let mut reader = BufReader::new(stderr).lines();
@@ -70,38 +91,94 @@ impl ShadowCompiler {
             stderr_buffer.push_str(&line);
             stderr_buffer.push('\n');
 
-            // Check if line terminates a complete compiler diagnostic
-            if line.trim().is_empty() && stderr_buffer.contains("error[E") {
-                if let Ok(fault) = TrappedFault::parse_diagnostic(&stderr_buffer, 1) {
-                    debug!(code = ?fault.category, "Shadow compiler trapped diagnostic mid-build");
+            // Trigger diagnostics for Rustc (error[E) or TypeScript (error TS)
+            let is_trigger = line.trim().is_empty()
+                || line.starts_with("error:")
+                || line.starts_with("error[E")
+                || line.starts_with("error TS")
+                || line.starts_with("warning:");
 
-                    // Record fault
-                    let mut faults = faults_ref.lock().await;
-                    faults.push(fault.clone());
-                    drop(faults);
-
-                    // Speculatively generate fix candidate
-                    let elapsed = start_time.elapsed().as_millis() as u64;
-                    let candidate = SpeculativeFixCandidate {
-                        fault: fault.clone(),
-                        candidate_patch: Some(format!(
-                            "// Speculative fix candidate generated in {}ms for {:?}",
-                            elapsed, fault.category
-                        )),
-                        generated_at_ms: elapsed,
-                    };
-
-                    let mut fixes = fixes_ref.lock().await;
-                    fixes.push(candidate);
-                }
+            if is_trigger && (stderr_buffer.contains("error[E") || stderr_buffer.contains("error TS")) {
+                Self::process_diagnostic_chunk(
+                    &stderr_buffer,
+                    &start_time,
+                    &faults_ref,
+                    &fixes_ref,
+                    &engine,
+                ).await;
                 stderr_buffer.clear();
             }
         }
 
+        // Process any remaining diagnostic before EOF
+        if !stderr_buffer.trim().is_empty() && (stderr_buffer.contains("error[E") || stderr_buffer.contains("error TS")) {
+            Self::process_diagnostic_chunk(
+                &stderr_buffer,
+                &start_time,
+                &faults_ref,
+                &fixes_ref,
+                &engine,
+            ).await;
+            stderr_buffer.clear();
+        }
+
+        let _ = stdout_task.await;
         let status = child.wait().await?;
         let exit_code = status.code().unwrap_or(-1);
         info!(exit_code, elapsed = ?start_time.elapsed(), "Shadow compilation finished");
         Ok(exit_code)
+    }
+
+    async fn process_diagnostic_chunk(
+        buffer: &str,
+        start_time: &std::time::Instant,
+        faults_ref: &Arc<Mutex<Vec<TrappedFault>>>,
+        fixes_ref: &Arc<Mutex<Vec<SpeculativeFixCandidate>>>,
+        engine: &Option<Arc<dyn BackendEngine>>,
+    ) {
+        if let Ok(fault) = TrappedFault::parse_diagnostic(buffer, 1) {
+            debug!(code = ?fault.category, "Shadow compiler trapped diagnostic mid-build");
+
+            let mut faults = faults_ref.lock().await;
+            faults.push(fault.clone());
+            drop(faults);
+
+            let elapsed = start_time.elapsed().as_millis() as u64;
+            let candidate_patch = if let Some(eng) = engine {
+                let req = GenerateRequest {
+                    prompt: format!(
+                        "Compiler diagnostic:\nCategory: {:?}\nMessage: {}\nLocation: {:?}:{:?}\nProvide a concise fix for this error.",
+                        fault.category, fault.primary_message, fault.target_file, fault.line_number
+                    ),
+                    system_prompt: Some("You are an expert compiler error remediation agent. Provide concise, direct fixes.".to_string()),
+                    messages: None,
+                    temperature: Some(0.1),
+                    top_p: None,
+                    max_tokens: Some(512),
+                    permissive: false,
+                    seed: None,
+                    use_case: None,
+                };
+                match eng.generate(&req) {
+                    Ok(res) => Some(res.content),
+                    Err(e) => Some(format!("// Speculative fix generation failed: {}", e)),
+                }
+            } else {
+                Some(format!(
+                    "// Speculative fix candidate generated in {}ms for {:?}",
+                    elapsed, fault.category
+                ))
+            };
+
+            let candidate = SpeculativeFixCandidate {
+                fault: fault.clone(),
+                candidate_patch,
+                generated_at_ms: elapsed,
+            };
+
+            let mut fixes = fixes_ref.lock().await;
+            fixes.push(candidate);
+        }
     }
 
     pub async fn get_fixes(&self) -> Vec<SpeculativeFixCandidate> {
@@ -131,5 +208,42 @@ mod tests {
         let fixes = shadow.get_fixes().await;
         assert_eq!(fixes.len(), 1);
         assert!(fixes[0].candidate_patch.as_ref().unwrap().contains("E0499"));
+    }
+
+    #[tokio::test]
+    async fn test_shadow_compiler_captures_typescript_error() {
+        let shadow = ShadowCompiler::new();
+        let cmd = "echo 'error TS2322: Type string is not assignable to type number.\n  --> src/index.ts:15:3\n' >&2";
+
+        let exit_code = shadow.execute_and_shadow(cmd, None).await.unwrap();
+        assert_eq!(exit_code, 0);
+
+        let faults = shadow.get_faults().await;
+        assert_eq!(faults.len(), 1);
+        let fixes = shadow.get_fixes().await;
+        assert_eq!(fixes.len(), 1);
+        assert!(fixes[0].candidate_patch.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_shadow_compiler_stdout_drain_and_engine_synthesis() {
+        use crate::backend::mock::MockEngine;
+
+        let shadow = ShadowCompiler::new();
+        let mock_engine: Arc<dyn BackendEngine> = Arc::new(MockEngine::new());
+        // Emit large stdout (>100KB) to verify no pipe deadlock, along with an error
+        let cmd = "python3 -c 'import sys; sys.stdout.write(\"x\" * 100000 + \"\\n\"); sys.stderr.write(\"error[E0382]: use of moved value: `s`\\n  --> src/main.rs:5:1\\n\")'";
+
+        let exit_code = shadow
+            .execute_and_shadow_with_engine(cmd, None, Some(mock_engine))
+            .await
+            .unwrap();
+        assert_eq!(exit_code, 0);
+
+        let faults = shadow.get_faults().await;
+        assert_eq!(faults.len(), 1);
+        let fixes = shadow.get_fixes().await;
+        assert_eq!(fixes.len(), 1);
+        assert!(fixes[0].candidate_patch.is_some());
     }
 }

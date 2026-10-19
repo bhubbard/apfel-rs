@@ -13,30 +13,30 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_cli_runner_model_info() {
-    let args = CliArgs::parse_from(&["apfel", "--model-info"]);
+    let args = CliArgs::parse_from(["apfel", "--model-info"]);
     let code = run_cli(args).await;
     assert_eq!(code, ApfelExitCodes::SUCCESS);
 }
 
 #[tokio::test]
 async fn test_cli_runner_completions() {
-    let args_bash = CliArgs::parse_from(&["apfel", "--completions", "bash"]);
+    let args_bash = CliArgs::parse_from(["apfel", "--completions", "bash"]);
     assert_eq!(run_cli(args_bash).await, ApfelExitCodes::SUCCESS);
 
-    let args_zsh = CliArgs::parse_from(&["apfel", "--completions", "zsh"]);
+    let args_zsh = CliArgs::parse_from(["apfel", "--completions", "zsh"]);
     assert_eq!(run_cli(args_zsh).await, ApfelExitCodes::SUCCESS);
 
-    let args_bad = CliArgs::parse_from(&["apfel", "--completions", "invalid_shell"]);
+    let args_bad = CliArgs::parse_from(["apfel", "--completions", "invalid_shell"]);
     assert_eq!(run_cli(args_bad).await, ApfelExitCodes::USAGE_ERROR);
 }
 
 #[tokio::test]
 async fn test_cli_runner_count_tokens() {
-    let args = CliArgs::parse_from(&["apfel", "--count-tokens", "Test token counting prompt"]);
+    let args = CliArgs::parse_from(["apfel", "--count-tokens", "Test token counting prompt"]);
     assert_eq!(run_cli(args).await, ApfelExitCodes::SUCCESS);
 
     // JSON output format
-    let args_json = CliArgs::parse_from(&[
+    let args_json = CliArgs::parse_from([
         "apfel",
         "--count-tokens",
         "-o",
@@ -46,7 +46,7 @@ async fn test_cli_runner_count_tokens() {
     assert_eq!(run_cli(args_json).await, ApfelExitCodes::SUCCESS);
 
     // Missing file attachment fails with usage error
-    let args_file = CliArgs::parse_from(&[
+    let args_file = CliArgs::parse_from([
         "apfel",
         "--count-tokens",
         "-f",
@@ -57,7 +57,7 @@ async fn test_cli_runner_count_tokens() {
 
 #[tokio::test]
 async fn test_cli_runner_benchmark() {
-    let args = CliArgs::parse_from(&["apfel", "--benchmark"]);
+    let args = CliArgs::parse_from(["apfel", "--benchmark"]);
     let code = run_cli(args).await;
     assert_eq!(code, ApfelExitCodes::SUCCESS);
 }
@@ -92,21 +92,21 @@ async fn test_cli_runner_generation_mock_engine() {
     let mock = Arc::new(MockEngine::with_response("```rust\nfn main() {}\n```"));
 
     // Generation with prompt
-    let args = CliArgs::parse_from(&["apfel", "--no-stream", "Write code"]);
+    let args = CliArgs::parse_from(["apfel", "--no-stream", "Write code"]);
     assert_eq!(
         run_cli_with_engine(args, mock.clone()).await,
         ApfelExitCodes::SUCCESS
     );
 
     // Generation with JSON output
-    let args_json = CliArgs::parse_from(&["apfel", "-o", "json", "--no-stream", "Generate json"]);
+    let args_json = CliArgs::parse_from(["apfel", "-o", "json", "--no-stream", "Generate json"]);
     assert_eq!(
         run_cli_with_engine(args_json, mock.clone()).await,
         ApfelExitCodes::SUCCESS
     );
 
     // Generation with missing prompt fails with USAGE_ERROR
-    let args_no_prompt = CliArgs::parse_from(&["apfel", "--no-stream"]);
+    let args_no_prompt = CliArgs::parse_from(["apfel", "--no-stream"]);
     assert_eq!(
         run_cli_with_engine(args_no_prompt, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -114,7 +114,7 @@ async fn test_cli_runner_generation_mock_engine() {
 
     // Generation with non-existent file fails with USAGE_ERROR
     let args_bad_file =
-        CliArgs::parse_from(&["apfel", "-f", "/path/to/invalid/file.txt", "prompt"]);
+        CliArgs::parse_from(["apfel", "-f", "/path/to/invalid/file.txt", "prompt"]);
     assert_eq!(
         run_cli_with_engine(args_bad_file, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -124,7 +124,7 @@ async fn test_cli_runner_generation_mock_engine() {
     let dir = tempfile::tempdir().unwrap();
     let sample_file = dir.path().join("context.txt");
     std::fs::write(&sample_file, "Contextual file data").unwrap();
-    let args_good_file = CliArgs::parse_from(&[
+    let args_good_file = CliArgs::parse_from([
         "apfel",
         "-f",
         sample_file.to_str().unwrap(),
@@ -143,7 +143,7 @@ async fn test_cli_runner_generation_mock_engine() {
         r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
     )
     .unwrap();
-    let args_schema = CliArgs::parse_from(&[
+    let args_schema = CliArgs::parse_from([
         "apfel",
         "--schema",
         schema_file.to_str().unwrap(),
@@ -158,7 +158,7 @@ async fn test_cli_runner_generation_mock_engine() {
     // Generation with invalid schema file
     let bad_schema_file = dir.path().join("bad_schema.json");
     std::fs::write(&bad_schema_file, r#"{ invalid json }"#).unwrap();
-    let args_bad_schema = CliArgs::parse_from(&[
+    let args_bad_schema = CliArgs::parse_from([
         "apfel",
         "--schema",
         bad_schema_file.to_str().unwrap(),
@@ -175,7 +175,7 @@ async fn test_cli_runner_generation_mock_engine() {
 async fn test_cli_runner_count_tokens_strict_overflow() {
     let mock = Arc::new(MockEngine::new());
     let huge_prompt = "a".repeat(20000);
-    let args = CliArgs::parse_from(&["apfel", "--count-tokens", "--strict", &huge_prompt]);
+    let args = CliArgs::parse_from(["apfel", "--count-tokens", "--strict", &huge_prompt]);
     assert_eq!(
         run_cli_with_engine(args, mock).await,
         ApfelExitCodes::CONTEXT_OVERFLOW
@@ -194,7 +194,7 @@ async fn test_cli_runner_messages_flag() {
         r#"[{"role": "user", "content": "Hello from file"}]"#,
     )
     .unwrap();
-    let args_good = CliArgs::parse_from(&[
+    let args_good = CliArgs::parse_from([
         "apfel",
         "--messages",
         msg_file.to_str().unwrap(),
@@ -206,7 +206,7 @@ async fn test_cli_runner_messages_flag() {
     );
 
     // Missing messages file
-    let args_missing = CliArgs::parse_from(&[
+    let args_missing = CliArgs::parse_from([
         "apfel",
         "--messages",
         "/nonexistent/messages.json",
@@ -224,7 +224,7 @@ async fn test_cli_runner_messages_flag() {
         r#"[{"role": "unknown_role", "content": "Hello"}]"#,
     )
     .unwrap();
-    let args_bad = CliArgs::parse_from(&[
+    let args_bad = CliArgs::parse_from([
         "apfel",
         "--messages",
         bad_msg_file.to_str().unwrap(),
@@ -243,7 +243,7 @@ async fn test_cli_runner_code_flag_success() {
     ));
 
     // Plain text mode
-    let args = CliArgs::parse_from(&["apfel", "--code", "Write a greeting function"]);
+    let args = CliArgs::parse_from(["apfel", "--code", "Write a greeting function"]);
     assert_eq!(
         run_cli_with_engine(args, mock.clone()).await,
         ApfelExitCodes::SUCCESS
@@ -251,7 +251,7 @@ async fn test_cli_runner_code_flag_success() {
 
     // JSON mode
     let args_json =
-        CliArgs::parse_from(&["apfel", "--code", "-o", "json", "Write a greeting function"]);
+        CliArgs::parse_from(["apfel", "--code", "-o", "json", "Write a greeting function"]);
     assert_eq!(
         run_cli_with_engine(args_json, mock.clone()).await,
         ApfelExitCodes::SUCCESS
@@ -263,21 +263,21 @@ async fn test_cli_runner_code_flag_rejections() {
     let mock = Arc::new(MockEngine::new());
 
     // --code --stream conflict
-    let args_stream = CliArgs::parse_from(&["apfel", "--code", "--stream", "Prompt"]);
+    let args_stream = CliArgs::parse_from(["apfel", "--code", "--stream", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_stream, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
     );
 
     // --code --chat conflict
-    let args_chat = CliArgs::parse_from(&["apfel", "--code", "--chat"]);
+    let args_chat = CliArgs::parse_from(["apfel", "--code", "--chat"]);
     assert_eq!(
         run_cli_with_engine(args_chat, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
     );
 
     // --code --serve conflict
-    let args_serve = CliArgs::parse_from(&["apfel", "--code", "--serve"]);
+    let args_serve = CliArgs::parse_from(["apfel", "--code", "--serve"]);
     assert_eq!(
         run_cli_with_engine(args_serve, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -285,7 +285,7 @@ async fn test_cli_runner_code_flag_rejections() {
 
     // --code --schema conflict
     let args_schema =
-        CliArgs::parse_from(&["apfel", "--code", "--schema", "schema.json", "Prompt"]);
+        CliArgs::parse_from(["apfel", "--code", "--schema", "schema.json", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_schema, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -295,7 +295,7 @@ async fn test_cli_runner_code_flag_rejections() {
 #[tokio::test]
 async fn test_cli_runner_code_flag_no_code_exits_7() {
     let mock = Arc::new(MockEngine::with_response("   \n\n   "));
-    let args = CliArgs::parse_from(&["apfel", "--code", "-q", "Prompt"]);
+    let args = CliArgs::parse_from(["apfel", "--code", "-q", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args, mock.clone()).await,
         ApfelExitCodes::NO_CODE
@@ -311,14 +311,14 @@ async fn test_cli_runner_require_complete_flag() {
     ));
 
     // With --require-complete: must return exit code 8
-    let args_req = CliArgs::parse_from(&["apfel", "--no-stream", "--require-complete", "Prompt"]);
+    let args_req = CliArgs::parse_from(["apfel", "--no-stream", "--require-complete", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_req, mock_truncated.clone()).await,
         ApfelExitCodes::INCOMPLETE_RESPONSE
     );
 
     // Without --require-complete: allows partial output, returns 0
-    let args_normal = CliArgs::parse_from(&["apfel", "--no-stream", "Prompt"]);
+    let args_normal = CliArgs::parse_from(["apfel", "--no-stream", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_normal, mock_truncated.clone()).await,
         ApfelExitCodes::SUCCESS
@@ -327,14 +327,14 @@ async fn test_cli_runner_require_complete_flag() {
     // Finished response with finish_reason: "stop" -> returns 0 with --require-complete
     let mock_complete = Arc::new(MockEngine::with_finish_reason("Complete response", "stop"));
     let args_complete =
-        CliArgs::parse_from(&["apfel", "--no-stream", "--require-complete", "Prompt"]);
+        CliArgs::parse_from(["apfel", "--no-stream", "--require-complete", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_complete, mock_complete.clone()).await,
         ApfelExitCodes::SUCCESS
     );
 
     // Rejection in non-generation mode
-    let args_bad_serve = CliArgs::parse_from(&["apfel", "--require-complete", "--serve"]);
+    let args_bad_serve = CliArgs::parse_from(["apfel", "--require-complete", "--serve"]);
     assert_eq!(
         run_cli_with_engine(args_bad_serve, mock_complete.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -348,14 +348,14 @@ async fn test_cli_runner_stop_flag() {
     ));
 
     // Valid stop sequence truncates cleanly
-    let args = CliArgs::parse_from(&["apfel", "--no-stream", "--stop", "\nObservation:", "Prompt"]);
+    let args = CliArgs::parse_from(["apfel", "--no-stream", "--stop", "\nObservation:", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args, mock.clone()).await,
         ApfelExitCodes::SUCCESS
     );
 
     // Empty stop sequence rejected with usage error (exit 2)
-    let args_empty = CliArgs::parse_from(&["apfel", "--stop", "", "Prompt"]);
+    let args_empty = CliArgs::parse_from(["apfel", "--stop", "", "Prompt"]);
     assert_eq!(
         run_cli_with_engine(args_empty, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -367,28 +367,28 @@ async fn test_cli_runner_batch_flag_conflicts() {
     let mock = Arc::new(MockEngine::new());
 
     // --batch --stream conflict
-    let args_stream = CliArgs::parse_from(&["apfel", "--batch", "--stream"]);
+    let args_stream = CliArgs::parse_from(["apfel", "--batch", "--stream"]);
     assert_eq!(
         run_cli_with_engine(args_stream, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
     );
 
     // --batch --chat conflict
-    let args_chat = CliArgs::parse_from(&["apfel", "--batch", "--chat"]);
+    let args_chat = CliArgs::parse_from(["apfel", "--batch", "--chat"]);
     assert_eq!(
         run_cli_with_engine(args_chat, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
     );
 
     // --batch --serve conflict
-    let args_serve = CliArgs::parse_from(&["apfel", "--batch", "--serve"]);
+    let args_serve = CliArgs::parse_from(["apfel", "--batch", "--serve"]);
     assert_eq!(
         run_cli_with_engine(args_serve, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
     );
 
     // --batch --benchmark conflict
-    let args_bench = CliArgs::parse_from(&["apfel", "--batch", "--benchmark"]);
+    let args_bench = CliArgs::parse_from(["apfel", "--batch", "--benchmark"]);
     assert_eq!(
         run_cli_with_engine(args_bench, mock.clone()).await,
         ApfelExitCodes::USAGE_ERROR
@@ -400,7 +400,7 @@ async fn test_cli_runner_adapter_path_validation() {
     let mock = Arc::new(MockEngine::new());
 
     // Non-existent adapter path must fail with USAGE_ERROR
-    let args_bad = CliArgs::parse_from(&[
+    let args_bad = CliArgs::parse_from([
         "apfel",
         "--adapter",
         "/nonexistent/path/to/my_adapter.fmadapter",
@@ -416,7 +416,7 @@ async fn test_cli_runner_adapter_path_validation() {
     let adapter_file = dir.path().join("fine_tuned.fmadapter");
     std::fs::write(&adapter_file, "adapter-weights-content").unwrap();
 
-    let args_good = CliArgs::parse_from(&[
+    let args_good = CliArgs::parse_from([
         "apfel",
         "--no-stream",
         "--adapter",
@@ -434,7 +434,7 @@ async fn test_cli_runner_env_variable_fallback_for_serve() {
     let mock = Arc::new(MockEngine::new());
 
     // Case 1: Explicit CLI flag --temperature passed to --serve -> must reject with USAGE_ERROR
-    let mut args_explicit = CliArgs::parse_from(&["apfel", "--serve", "--temperature", "0.7"]);
+    let mut args_explicit = CliArgs::parse_from(["apfel", "--serve", "--temperature", "0.7"]);
     args_explicit.explicit_cli_args = Some(vec!["--serve".into(), "--temperature".into()]);
     assert_eq!(
         run_cli_with_engine(args_explicit, mock.clone()).await,
@@ -442,7 +442,7 @@ async fn test_cli_runner_env_variable_fallback_for_serve() {
     );
 
     // Case 2: Explicit CLI flag -t passed to --model-info -> must reject with USAGE_ERROR
-    let mut args_explicit_info = CliArgs::parse_from(&["apfel", "--model-info", "-t", "0.7"]);
+    let mut args_explicit_info = CliArgs::parse_from(["apfel", "--model-info", "-t", "0.7"]);
     args_explicit_info.explicit_cli_args = Some(vec!["--model-info".into(), "-t".into()]);
     assert_eq!(
         run_cli_with_engine(args_explicit_info, mock.clone()).await,
@@ -450,7 +450,7 @@ async fn test_cli_runner_env_variable_fallback_for_serve() {
     );
 
     // Case 3: APFEL_TEMPERATURE set in environment (NOT passed on CLI) -> must succeed without failing
-    let mut args_env_only = CliArgs::parse_from(&["apfel", "--model-info"]);
+    let mut args_env_only = CliArgs::parse_from(["apfel", "--model-info"]);
     args_env_only.temperature = Some(0.7);
     args_env_only.explicit_cli_args = Some(vec!["--model-info".into()]);
     assert_eq!(

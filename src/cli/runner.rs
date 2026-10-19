@@ -1186,24 +1186,46 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
 }
 
 async fn run_shm_server_mode(shm_name: &str, engine: Arc<dyn BackendEngine>) -> i32 {
-    let shm = match crate::core::shm::ShmBuffer::create(shm_name, 64 * 1024) {
+    let req_shm_name = if shm_name.ends_with("_req") || shm_name.ends_with("_res") {
+        shm_name.to_string()
+    } else {
+        format!("{}_req", shm_name)
+    };
+    let res_shm_name = if shm_name.ends_with("_req") {
+        format!("{}_res", shm_name.trim_end_matches("_req"))
+    } else if shm_name.ends_with("_res") {
+        shm_name.to_string()
+    } else {
+        format!("{}_res", shm_name)
+    };
+
+    let req_shm = match crate::core::shm::ShmBuffer::create(&req_shm_name, 64 * 1024) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("{}: Failed to initialize shared memory buffer '{}': {}", "SHM Error".red().bold(), shm_name, e);
+            eprintln!("{}: Failed to initialize request shared memory buffer '{}': {}", "SHM Error".red().bold(), req_shm_name, e);
             return ApfelExitCodes::RUNTIME_ERROR;
         }
     };
-    println!("apfel-shm server listening on segment '{}' (capacity 64KB)", shm_name);
+    let res_shm = match crate::core::shm::ShmBuffer::create(&res_shm_name, 64 * 1024) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{}: Failed to initialize response shared memory buffer '{}': {}", "SHM Error".red().bold(), res_shm_name, e);
+            return ApfelExitCodes::RUNTIME_ERROR;
+        }
+    };
+
+    println!("apfel-shm server listening on request segment '{}' and response segment '{}' (capacity 64KB)", req_shm_name, res_shm_name);
     println!("Waiting for zero-copy client requests (Ctrl+C to stop)...");
 
     let mut last_seq = 0;
+    let mut idle_spins = 0usize;
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let seq = shm.sequence();
+        let seq = req_shm.sequence();
         if seq > last_seq {
-            let payload = shm.read_payload();
+            idle_spins = 0;
+            let payload = req_shm.read_payload();
             if !payload.is_empty() {
-                let prompt = String::from_utf8_lossy(&payload).to_string();
+                let prompt = String::from_utf8_lossy(payload).to_string();
                 let req = GenerateRequest {
                     prompt,
                     system_prompt: None,
@@ -1217,24 +1239,33 @@ async fn run_shm_server_mode(shm_name: &str, engine: Arc<dyn BackendEngine>) -> 
                 };
                 match engine.generate(&req) {
                     Ok(res) => {
-                        let _ = shm.write_payload(res.content.as_bytes());
-                        last_seq = shm.sequence();
+                        let _ = res_shm.write_payload(res.content.as_bytes());
+                        last_seq = seq;
                     }
                     Err(e) => {
                         let err_msg = format!("Error: {}", e);
-                        let _ = shm.write_payload(err_msg.as_bytes());
-                        last_seq = shm.sequence();
+                        let _ = res_shm.write_payload(err_msg.as_bytes());
+                        last_seq = seq;
                     }
                 }
+            }
+        } else {
+            idle_spins = idle_spins.saturating_add(1);
+            if idle_spins < 64 {
+                std::hint::spin_loop();
+            } else if idle_spins < 128 {
+                tokio::task::yield_now().await;
+            } else {
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
             }
         }
     }
 }
 
-async fn run_shadow_compiler_mode(cmd: &str, _engine: Arc<dyn BackendEngine>) -> i32 {
+async fn run_shadow_compiler_mode(cmd: &str, engine: Arc<dyn BackendEngine>) -> i32 {
     println!("{}", format!("Starting speculative shadow compiler: {}", cmd).cyan().bold());
     let shadow = crate::core::shadow_compiler::ShadowCompiler::new();
-    match shadow.execute_and_shadow(cmd, None).await {
+    match shadow.execute_and_shadow_with_engine(cmd, None, Some(engine)).await {
         Ok(exit_code) => {
             let faults = shadow.get_faults().await;
             let fixes = shadow.get_fixes().await;

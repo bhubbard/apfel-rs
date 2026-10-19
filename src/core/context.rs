@@ -364,10 +364,9 @@ impl ContextManager {
         }
 
         // Phase 1: Normalize excessive blank lines and trailing spaces
-        let lines: Vec<&str> = text.lines().collect();
         let mut compacted_lines = Vec::new();
         let mut last_was_empty = false;
-        for line in &lines {
+        for line in text.lines() {
             let trimmed = line.trim_end();
             if trimmed.is_empty() {
                 if !last_was_empty {
@@ -384,45 +383,69 @@ impl ContextManager {
             return joined;
         }
 
-        // Phase 2: Binary search truncation of lines to strictly fit budget
+        // Phase 2: Binary search truncation of lines using pre-indexed offsets (zero allocation in loop)
+        let mut line_ends = Vec::with_capacity(compacted_lines.len());
+        let mut current_offset = 0;
+        for (i, line) in compacted_lines.iter().enumerate() {
+            current_offset += line.len();
+            line_ends.push(current_offset);
+            if i + 1 < compacted_lines.len() {
+                current_offset += 1; // account for '\n'
+            }
+        }
+
         let mut low = 0;
         let mut high = compacted_lines.len();
-        let mut best_str = String::new();
+        let mut best_end = 0;
 
         while low <= high {
             let mid = (low + high) / 2;
-            let candidate = compacted_lines[..mid].join("\n");
-            if count_tokens(&candidate) <= budget_tokens {
-                best_str = candidate;
+            if mid == 0 {
+                break;
+            }
+            let end_idx = line_ends[mid - 1];
+            let candidate = &joined[..end_idx];
+            if count_tokens(candidate) <= budget_tokens {
+                best_end = end_idx;
                 low = mid + 1;
             } else {
-                if mid == 0 {
-                    break;
-                }
                 high = mid - 1;
             }
         }
 
-        if best_str.is_empty() {
-            // Character-level truncation fallback
-            let chars: Vec<char> = text.chars().collect();
-            let mut c_low = 0;
-            let mut c_high = chars.len();
-            while c_low <= c_high {
-                let c_mid = (c_low + c_high) / 2;
-                let candidate: String = chars[..c_mid].iter().collect();
-                if count_tokens(&candidate) <= budget_tokens {
-                    best_str = candidate;
-                    c_low = c_mid + 1;
-                } else {
-                    if c_mid == 0 {
-                        break;
-                    }
-                    c_high = c_mid - 1;
-                }
+        if best_end > 0 {
+            return joined[..best_end].to_string();
+        }
+
+        // Phase 3: Character-level truncation fallback using UTF-8 char boundaries with zero Vec<char> allocation
+        let char_offsets: Vec<usize> = text.char_indices().map(|(idx, _)| idx).collect();
+        let mut c_low = 0;
+        let mut c_high = char_offsets.len();
+        let mut best_char_end = 0;
+
+        while c_low <= c_high {
+            let c_mid = (c_low + c_high) / 2;
+            if c_mid == 0 {
+                break;
+            }
+            let end_idx = if c_mid < char_offsets.len() {
+                char_offsets[c_mid]
+            } else {
+                text.len()
+            };
+            let candidate = &text[..end_idx];
+            if count_tokens(candidate) <= budget_tokens {
+                best_char_end = end_idx;
+                c_low = c_mid + 1;
+            } else {
+                c_high = c_mid - 1;
             }
         }
 
-        best_str
+        if best_char_end > 0 {
+            text[..best_char_end].to_string()
+        } else {
+            String::new()
+        }
     }
 }

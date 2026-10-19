@@ -169,14 +169,14 @@ fn test_breakthrough_6_thermal_and_battery_adaptive_scheduling() {
     let profile_eco = PowerThermalMonitor::resolve_profile(&eco_battery, &ThermalState::Nominal);
     assert_eq!(profile_eco, ComputeProfile::EcoPowerSaver);
     assert_eq!(profile_eco.context_token_ceiling(), 2048);
-    assert_eq!(profile_eco.enable_speculative_decoding(), false);
+    assert!(!profile_eco.enable_speculative_decoding());
     assert_eq!(profile_eco.worker_threads(), 2);
 
     let perf_ac = PowerSource::AcPower;
     let profile_perf = PowerThermalMonitor::resolve_profile(&perf_ac, &ThermalState::Nominal);
     assert_eq!(profile_perf, ComputeProfile::Performance);
     assert_eq!(profile_perf.context_token_ceiling(), 4096);
-    assert_eq!(profile_perf.enable_speculative_decoding(), true);
+    assert!(profile_perf.enable_speculative_decoding());
     assert_eq!(profile_perf.worker_threads(), 8);
 
     // Live probe

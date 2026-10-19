@@ -43,8 +43,27 @@ impl Default for MlxBackendEngine {
 
 impl BackendEngine for MlxBackendEngine {
     fn is_available(&self) -> bool {
-        // Runs natively on Apple Silicon with MLX
-        cfg!(target_arch = "aarch64") && cfg!(target_os = "macos")
+        // Runs on Apple Silicon when MLX Python packages or mlx-lm are available
+        if !cfg!(target_arch = "aarch64") || !cfg!(target_os = "macos") {
+            return false;
+        }
+        static MLX_CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *MLX_CHECK.get_or_init(|| {
+            std::process::Command::new("python3")
+                .args(["-c", "import mlx.core"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+                || std::process::Command::new("mlx_lm.generate")
+                    .arg("--help")
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+        })
     }
 
     fn context_size(&self) -> usize {

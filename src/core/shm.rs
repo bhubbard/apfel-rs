@@ -62,7 +62,11 @@ impl ShmBuffer {
         // macOS limits shm_open names to 30 characters (including leading '/')
         let max_len = 29;
         let safe_core = if trimmed.len() > max_len {
-            &trimmed[..max_len]
+            let mut end = max_len;
+            while end > 0 && !trimmed.is_char_boundary(end) {
+                end -= 1;
+            }
+            &trimmed[..end]
         } else {
             trimmed
         };
@@ -118,10 +122,10 @@ impl ShmBuffer {
             (*header_ptr).payload_size.store(0, Ordering::Release);
         }
 
-        debug!(shm_name = %name, total_size, "Created POSIX shared memory buffer");
+        debug!(shm_name = %safe_name, total_size, "Created POSIX shared memory buffer");
 
         Ok(Self {
-            name: name.to_string(),
+            name: safe_name,
             fd,
             ptr: map_ptr as *mut u8,
             total_size,
@@ -143,7 +147,7 @@ impl ShmBuffer {
         let mut stat: libc::stat = unsafe { std::mem::zeroed() };
         if unsafe { libc::fstat(fd, &mut stat) } != 0 {
             unsafe { libc::close(fd) };
-            return Err(ShmError::OpenFailed(name.to_string(), std::io::Error::last_os_error()));
+            return Err(ShmError::OpenFailed(safe_name, std::io::Error::last_os_error()));
         }
         let total_size = stat.st_size as usize;
 
@@ -173,7 +177,7 @@ impl ShmBuffer {
         }
 
         Ok(Self {
-            name: name.to_string(),
+            name: safe_name,
             fd,
             ptr: map_ptr as *mut u8,
             total_size,
@@ -202,7 +206,9 @@ impl ShmBuffer {
     /// Reads raw payload bytes directly from shared memory.
     pub fn read_payload(&self) -> &[u8] {
         let header = self.header();
-        let size = header.payload_size.load(Ordering::Acquire) as usize;
+        let raw_size = header.payload_size.load(Ordering::Acquire) as usize;
+        let max_cap = header.capacity as usize;
+        let size = raw_size.min(max_cap);
         let payload_src = unsafe { self.ptr.add(std::mem::size_of::<ShmHeader>()) };
         unsafe { std::slice::from_raw_parts(payload_src, size) }
     }
@@ -248,5 +254,27 @@ mod tests {
         let reader = ShmBuffer::open(&shm_name).unwrap();
         let read_data = reader.read_payload();
         assert_eq!(read_data, message);
+    }
+
+    #[test]
+    fn test_shm_sanitize_name_multibyte_utf8() {
+        // Multi-byte emoji string exceeding 29 bytes
+        let long_name = "/apfel_🚀🌟🔥_long_long_long_long_name";
+        let sanitized = ShmBuffer::sanitize_name(long_name);
+        assert!(sanitized.starts_with('/'));
+        assert!(sanitized.len() <= 30);
+        // Valid UTF-8 string guaranteed
+        std::str::from_utf8(sanitized.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_shm_read_payload_bounds_check() {
+        let shm_name = format!("/apfel_b_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+        let buffer = ShmBuffer::create(&shm_name, 256).unwrap();
+        // Artificially corrupt payload_size to exceed capacity
+        buffer.header().payload_size.store(999999, Ordering::Release);
+        let payload = buffer.read_payload();
+        // Must clamp to capacity (256), avoiding OOB memory read UB
+        assert_eq!(payload.len(), 256);
     }
 }

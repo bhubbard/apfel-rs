@@ -10,6 +10,7 @@ use crate::core::error::ApfelError;
 use crate::core::json_stripper::JSONFenceStripper;
 use crate::core::models::*;
 use crate::core::responses_models::*;
+use crate::core::stop_matcher::{StopMatchResult, StopSequenceMatcher};
 use crate::mcp::client::MCPManager;
 use axum::body::Body;
 use axum::extract::State;
@@ -169,6 +170,62 @@ struct DeltaView<'a> {
     content: Option<&'a str>,
 }
 
+#[inline]
+fn build_sse_chunk_bytes(
+    buf: &mut Vec<u8>,
+    stream_id: &str,
+    created: i64,
+    model_name: &str,
+    content: Option<&str>,
+    finish_reason: Option<&str>,
+) -> bytes::Bytes {
+    buf.clear();
+    buf.extend_from_slice(b"data: ");
+    let view = ChunkView {
+        id: stream_id,
+        object: "chat.completion.chunk",
+        created,
+        model: model_name,
+        choices: [ChoiceView {
+            index: 0,
+            delta: DeltaView {
+                role: None,
+                content,
+            },
+            finish_reason,
+        }],
+    };
+    let _ = serde_json::to_writer(&mut *buf, &view);
+    buf.extend_from_slice(b"\n\n");
+    bytes::Bytes::copy_from_slice(buf)
+}
+
+#[inline]
+fn build_sse_chunk_done(
+    buf: &mut Vec<u8>,
+    stream_id: &str,
+    created: i64,
+    model_name: &str,
+    finish_reason: &str,
+) -> bytes::Bytes {
+    buf.clear();
+    buf.extend_from_slice(b"data: ");
+    let view = ChunkView {
+        id: stream_id,
+        object: "chat.completion.chunk",
+        created,
+        model: model_name,
+        choices: [ChoiceView {
+            index: 0,
+            delta: DeltaView::default(),
+            finish_reason: Some(finish_reason),
+        }],
+    };
+    let _ = serde_json::to_writer(&mut *buf, &view);
+    buf.extend_from_slice(b"\n\ndata: [DONE]\n\n");
+    bytes::Bytes::copy_from_slice(buf)
+}
+
 // MARK: - Health & Info
 
 pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -282,96 +339,91 @@ pub(crate) async fn chat_completions_handler(
             .into_iter()
             .map(|s| s.to_string())
             .collect();
+        let mut stop_matcher = if !stop_seqs.is_empty() {
+            StopSequenceMatcher::new(stop_seqs).ok()
+        } else {
+            None
+        };
+
         let stream = async_stream::stream! {
             let created = chrono::Utc::now().timestamp();
-            let mut accumulated = String::new();
-            let mut stopped = false;
+            let mut sse_buf = Vec::with_capacity(256);
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(delta_text) => {
-                        if stopped {
-                            continue;
-                        }
-                        let mut emit_text = delta_text;
-                        accumulated.push_str(&emit_text);
-                        if !stop_seqs.is_empty() {
-                            for seq in &stop_seqs {
-                                if let Some(pos) = accumulated.find(seq) {
-                                    let keep_len = pos.saturating_sub(accumulated.len() - emit_text.len());
-                                    emit_text.truncate(keep_len);
-                                    stopped = true;
+                        if let Some(ref mut matcher) = stop_matcher {
+                            match matcher.feed(&delta_text) {
+                                StopMatchResult::Emit(text) => {
+                                    if !text.is_empty() {
+                                        yield Ok::<_, std::convert::Infallible>(build_sse_chunk_bytes(
+                                            &mut sse_buf,
+                                            &stream_id,
+                                            created,
+                                            &model_name,
+                                            Some(&text),
+                                            None,
+                                        ));
+                                    }
+                                }
+                                StopMatchResult::Holding => {}
+                                StopMatchResult::Matched { emitted, .. } => {
+                                    if !emitted.is_empty() {
+                                        yield Ok(build_sse_chunk_bytes(
+                                            &mut sse_buf,
+                                            &stream_id,
+                                            created,
+                                            &model_name,
+                                            Some(&emitted),
+                                            None,
+                                        ));
+                                    }
+                                    yield Ok(build_sse_chunk_done(
+                                        &mut sse_buf,
+                                        &stream_id,
+                                        created,
+                                        &model_name,
+                                        "stop",
+                                    ));
                                     break;
                                 }
                             }
-                        }
-                        if !emit_text.is_empty() {
-                            let chunk_view = ChunkView {
-                                id: &stream_id,
-                                object: "chat.completion.chunk",
+                        } else if !delta_text.is_empty() {
+                            yield Ok::<_, std::convert::Infallible>(build_sse_chunk_bytes(
+                                &mut sse_buf,
+                                &stream_id,
                                 created,
-                                model: &model_name,
-                                choices: [ChoiceView {
-                                    index: 0,
-                                    delta: DeltaView {
-                                        role: None,
-                                        content: Some(&emit_text),
-                                    },
-                                    finish_reason: None,
-                                }],
-                            };
-                            let json = serde_json::to_string(&chunk_view).unwrap_or_default();
-                            let mut msg = String::with_capacity(json.len() + 9);
-                            msg.push_str("data: ");
-                            msg.push_str(&json);
-                            msg.push_str("\n\n");
-                            yield Ok::<_, std::convert::Infallible>(msg);
-                        }
-                        if stopped {
-                            let final_view = ChunkView {
-                                id: &stream_id,
-                                object: "chat.completion.chunk",
-                                created,
-                                model: &model_name,
-                                choices: [ChoiceView {
-                                    index: 0,
-                                    delta: DeltaView::default(),
-                                    finish_reason: Some("stop"),
-                                }],
-                            };
-                            let json = serde_json::to_string(&final_view).unwrap_or_default();
-                            let mut msg = String::with_capacity(json.len() + 25);
-                            msg.push_str("data: ");
-                            msg.push_str(&json);
-                            msg.push_str("\n\ndata: [DONE]\n\n");
-                            yield Ok(msg);
-                            break;
+                                &model_name,
+                                Some(&delta_text),
+                                None,
+                            ));
                         }
                     }
                     StreamChunk::Done { finish_reason } => {
-                        if !stopped {
-                            let final_view = ChunkView {
-                                id: &stream_id,
-                                object: "chat.completion.chunk",
-                                created,
-                                model: &model_name,
-                                choices: [ChoiceView {
-                                    index: 0,
-                                    delta: DeltaView::default(),
-                                    finish_reason: Some(&finish_reason),
-                                }],
-                            };
-                            let json = serde_json::to_string(&final_view).unwrap_or_default();
-                            let mut msg = String::with_capacity(json.len() + 25);
-                            msg.push_str("data: ");
-                            msg.push_str(&json);
-                            msg.push_str("\n\ndata: [DONE]\n\n");
-                            yield Ok(msg);
+                        if let Some(ref mut matcher) = stop_matcher {
+                            let flushed = matcher.flush();
+                            if !flushed.is_empty() {
+                                yield Ok(build_sse_chunk_bytes(
+                                    &mut sse_buf,
+                                    &stream_id,
+                                    created,
+                                    &model_name,
+                                    Some(&flushed),
+                                    None,
+                                ));
+                            }
                         }
+                        yield Ok(build_sse_chunk_done(
+                            &mut sse_buf,
+                            &stream_id,
+                            created,
+                            &model_name,
+                            &finish_reason,
+                        ));
                         break;
                     }
                     StreamChunk::Error(e) => {
                         let err_json = serde_json::to_string(&e.to_openai_json()).unwrap_or_default();
-                        yield Ok(format!("data: {}\n\ndata: [DONE]\n\n", err_json));
+                        yield Ok(bytes::Bytes::from(format!("data: {}\n\ndata: [DONE]\n\n", err_json)));
                         break;
                     }
                 }
@@ -633,11 +685,10 @@ pub(crate) async fn responses_input_tokens_handler(
 
 fn compute_text_embedding(text: &str, dims: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; dims];
-    let lower = text.to_lowercase();
-    for (i, word) in lower.split_whitespace().enumerate() {
+    for (i, word) in text.split_whitespace().enumerate() {
         let mut h = 2166136261u32;
         for b in word.bytes() {
-            h ^= b as u32;
+            h ^= b.to_ascii_lowercase() as u32;
             h = h.wrapping_mul(16777619);
         }
         let idx = (h as usize) % dims;
