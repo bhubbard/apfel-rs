@@ -236,6 +236,20 @@ pub(crate) async fn health_handler(State(state): State<AppState>) -> impl IntoRe
     )
 }
 
+// MARK: - Prometheus Metrics
+
+pub(crate) async fn metrics_handler() -> impl IntoResponse {
+    let metrics_text = crate::core::metrics::ApfelMetrics::global().render_prometheus();
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+        ],
+        metrics_text,
+    )
+}
+
 // MARK: - Models
 
 pub(crate) async fn list_models_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -252,6 +266,7 @@ pub(crate) async fn chat_completions_handler(
     State(state): State<AppState>,
     Json(req): Json<ChatCompletionRequest>,
 ) -> Response {
+    let active_guard = crate::core::metrics::ApfelMetrics::global().start_request();
     let is_stream = req.stream.unwrap_or(false);
 
     // Resolve context config from request
@@ -271,6 +286,11 @@ pub(crate) async fn chat_completions_handler(
     let effective_max_tokens = match req.validate_max_tokens() {
         Ok(t) => t,
         Err(err) => {
+            crate::core::metrics::ApfelMetrics::global().record_request(
+                "/v1/chat/completions",
+                400,
+                active_guard.elapsed().as_secs_f64(),
+            );
             return (StatusCode::BAD_REQUEST, Json(err.to_openai_json())).into_response();
         }
     };
@@ -322,6 +342,11 @@ pub(crate) async fn chat_completions_handler(
         let mut rx = match state.engine.stream_generate(&gen_req) {
             Ok(rx) => rx,
             Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/v1/chat/completions",
+                    e.http_status(),
+                    active_guard.elapsed().as_secs_f64(),
+                );
                 return (
                     StatusCode::from_u16(e.http_status())
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -345,12 +370,27 @@ pub(crate) async fn chat_completions_handler(
             None
         };
 
+        let prompt_tokens: usize = req
+            .messages
+            .iter()
+            .map(|m| state.engine.count_tokens(&m.text_content()))
+            .sum();
+
         let stream = async_stream::stream! {
+            let _stream_guard = crate::core::metrics::ApfelMetrics::global().start_streaming();
             let created = chrono::Utc::now().timestamp();
             let mut sse_buf = Vec::with_capacity(256);
+            let mut first_token_time = None;
+            let mut output_tokens = 0usize;
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(delta_text) => {
+                        if first_token_time.is_none() && !delta_text.is_empty() {
+                            let ttft = active_guard.elapsed().as_secs_f64();
+                            first_token_time = Some(ttft);
+                            crate::core::metrics::ApfelMetrics::global().record_ttft(ttft);
+                        }
+                        output_tokens += 1;
                         if let Some(ref mut matcher) = stop_matcher {
                             match matcher.feed(&delta_text) {
                                 StopMatchResult::Emit(text) => {
@@ -399,6 +439,10 @@ pub(crate) async fn chat_completions_handler(
                         }
                     }
                     StreamChunk::Done { finish_reason } => {
+                        let duration = active_guard.elapsed().as_secs_f64();
+                        let tps = if duration > 0.0 { (output_tokens as f64) / duration } else { 0.0 };
+                        crate::core::metrics::ApfelMetrics::global().record_tokens(prompt_tokens, output_tokens, tps);
+                        crate::core::metrics::ApfelMetrics::global().record_request("/v1/chat/completions", 200, duration);
                         if let Some(ref mut matcher) = stop_matcher {
                             let flushed = matcher.flush();
                             if !flushed.is_empty() {
@@ -422,6 +466,11 @@ pub(crate) async fn chat_completions_handler(
                         break;
                     }
                     StreamChunk::Error(e) => {
+                        crate::core::metrics::ApfelMetrics::global().record_request(
+                            "/v1/chat/completions",
+                            e.http_status(),
+                            active_guard.elapsed().as_secs_f64(),
+                        );
                         let err_json = serde_json::to_string(&e.to_openai_json()).unwrap_or_default();
                         yield Ok(bytes::Bytes::from(format!("data: {}\n\ndata: [DONE]\n\n", err_json)));
                         break;
@@ -467,6 +516,11 @@ pub(crate) async fn chat_completions_handler(
         {
             Ok(r) => r,
             Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/v1/chat/completions",
+                    e.http_status(),
+                    active_guard.elapsed().as_secs_f64(),
+                );
                 return (
                     StatusCode::from_u16(e.http_status())
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -522,6 +576,11 @@ pub(crate) async fn chat_completions_handler(
             },
         };
 
+        let duration = active_guard.elapsed().as_secs_f64();
+        let tps = if duration > 0.0 { (completion_tokens as f64) / duration } else { 0.0 };
+        crate::core::metrics::ApfelMetrics::global().record_tokens(prompt_tokens, completion_tokens, tps);
+        crate::core::metrics::ApfelMetrics::global().record_request("/v1/chat/completions", 200, duration);
+
         Json(resp).into_response()
     }
 }
@@ -532,12 +591,23 @@ pub(crate) async fn responses_handler(
     State(state): State<AppState>,
     Json(req): Json<ResponsesRequest>,
 ) -> Response {
+    let active_guard = crate::core::metrics::ApfelMetrics::global().start_request();
     if req.background == Some(true) {
+        crate::core::metrics::ApfelMetrics::global().record_request(
+            "/v1/responses",
+            501,
+            active_guard.elapsed().as_secs_f64(),
+        );
         let err =
             ApfelError::NotImplemented("background=true is not supported on-device".to_string());
         return (StatusCode::NOT_IMPLEMENTED, Json(err.to_openai_json())).into_response();
     }
     if req.previous_response_id.is_some() {
+        crate::core::metrics::ApfelMetrics::global().record_request(
+            "/v1/responses",
+            501,
+            active_guard.elapsed().as_secs_f64(),
+        );
         let err = ApfelError::NotImplemented(
             "previous_response_id is not supported (server is stateless)".to_string(),
         );
@@ -592,6 +662,11 @@ pub(crate) async fn responses_handler(
     {
         Ok(r) => r,
         Err(e) => {
+            crate::core::metrics::ApfelMetrics::global().record_request(
+                "/v1/responses",
+                e.http_status(),
+                active_guard.elapsed().as_secs_f64(),
+            );
             return (
                 StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                 Json(e.to_openai_json()),
@@ -627,6 +702,11 @@ pub(crate) async fn responses_handler(
             total_tokens: input_tokens + output_tokens,
         },
     };
+
+    let duration = active_guard.elapsed().as_secs_f64();
+    let tps = if duration > 0.0 { (output_tokens as f64) / duration } else { 0.0 };
+    crate::core::metrics::ApfelMetrics::global().record_tokens(input_tokens, output_tokens, tps);
+    crate::core::metrics::ApfelMetrics::global().record_request("/v1/responses", 200, duration);
 
     Json(resp).into_response()
 }
@@ -709,6 +789,7 @@ pub(crate) async fn embeddings_handler(
     State(state): State<AppState>,
     Json(req): Json<EmbeddingRequest>,
 ) -> Response {
+    let active_guard = crate::core::metrics::ApfelMetrics::global().start_request();
     let inputs = req.input.to_vec();
     let mut total_tokens = 0;
     let mut data = Vec::with_capacity(inputs.len());
@@ -734,6 +815,10 @@ pub(crate) async fn embeddings_handler(
             total_tokens,
         },
     };
+
+    let duration = active_guard.elapsed().as_secs_f64();
+    crate::core::metrics::ApfelMetrics::global().record_tokens(total_tokens, 0, 0.0);
+    crate::core::metrics::ApfelMetrics::global().record_request("/v1/embeddings", 200, duration);
 
     Json(resp).into_response()
 }
@@ -804,6 +889,7 @@ pub(crate) async fn ollama_chat_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaChatRequest>,
 ) -> Response {
+    let active_guard = crate::core::metrics::ApfelMetrics::global().start_request();
     let should_stream = req.stream.unwrap_or(true);
     let mut prompt = String::new();
     for m in &req.messages {
@@ -823,27 +909,47 @@ pub(crate) async fn ollama_chat_handler(
 
     if !should_stream {
         match state.engine.generate(&gen_req) {
-            Ok(res) => Json(serde_json::json!({
-                "model": req.model,
-                "message": {
-                    "role": "assistant",
-                    "content": res.content
-                },
-                "done": true
-            }))
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            Ok(res) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/chat",
+                    200,
+                    active_guard.elapsed().as_secs_f64(),
+                );
+                Json(serde_json::json!({
+                    "model": req.model,
+                    "message": {
+                        "role": "assistant",
+                        "content": res.content
+                    },
+                    "done": true
+                }))
+                .into_response()
+            }
+            Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/chat",
+                    500,
+                    active_guard.elapsed().as_secs_f64(),
+                );
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            }
         }
     } else {
         let mut rx = match state.engine.stream_generate(&gen_req) {
             Ok(rx) => rx,
             Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/chat",
+                    500,
+                    active_guard.elapsed().as_secs_f64(),
+                );
                 return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
             }
         };
 
         let model = req.model.clone();
         let stream = async_stream::stream! {
+            let _stream_guard = crate::core::metrics::ApfelMetrics::global().start_streaming();
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(delta) => {
@@ -860,6 +966,11 @@ pub(crate) async fn ollama_chat_handler(
                         yield Ok::<_, std::convert::Infallible>(serialized);
                     }
                     StreamChunk::Done { .. } => {
+                        crate::core::metrics::ApfelMetrics::global().record_request(
+                            "/api/chat",
+                            200,
+                            active_guard.elapsed().as_secs_f64(),
+                        );
                         let line = serde_json::json!({
                             "model": model,
                             "done": true,
@@ -871,6 +982,11 @@ pub(crate) async fn ollama_chat_handler(
                         break;
                     }
                     StreamChunk::Error(e) => {
+                        crate::core::metrics::ApfelMetrics::global().record_request(
+                            "/api/chat",
+                            500,
+                            active_guard.elapsed().as_secs_f64(),
+                        );
                         let line = serde_json::json!({
                             "model": model,
                             "error": e.to_string(),
@@ -898,6 +1014,7 @@ pub(crate) async fn ollama_generate_handler(
     State(state): State<AppState>,
     Json(req): Json<OllamaGenerateRequest>,
 ) -> Response {
+    let active_guard = crate::core::metrics::ApfelMetrics::global().start_request();
     let should_stream = req.stream.unwrap_or(true);
     let gen_req = GenerateRequest {
         prompt: req.prompt,
@@ -913,24 +1030,44 @@ pub(crate) async fn ollama_generate_handler(
 
     if !should_stream {
         match state.engine.generate(&gen_req) {
-            Ok(res) => Json(serde_json::json!({
-                "model": req.model,
-                "response": res.content,
-                "done": true
-            }))
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            Ok(res) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/generate",
+                    200,
+                    active_guard.elapsed().as_secs_f64(),
+                );
+                Json(serde_json::json!({
+                    "model": req.model,
+                    "response": res.content,
+                    "done": true
+                }))
+                .into_response()
+            }
+            Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/generate",
+                    500,
+                    active_guard.elapsed().as_secs_f64(),
+                );
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            }
         }
     } else {
         let mut rx = match state.engine.stream_generate(&gen_req) {
             Ok(rx) => rx,
             Err(e) => {
+                crate::core::metrics::ApfelMetrics::global().record_request(
+                    "/api/generate",
+                    500,
+                    active_guard.elapsed().as_secs_f64(),
+                );
                 return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
             }
         };
 
         let model = req.model.clone();
         let stream = async_stream::stream! {
+            let _stream_guard = crate::core::metrics::ApfelMetrics::global().start_streaming();
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(delta) => {
@@ -944,6 +1081,11 @@ pub(crate) async fn ollama_generate_handler(
                         yield Ok::<_, std::convert::Infallible>(serialized);
                     }
                     StreamChunk::Done { .. } => {
+                        crate::core::metrics::ApfelMetrics::global().record_request(
+                            "/api/generate",
+                            200,
+                            active_guard.elapsed().as_secs_f64(),
+                        );
                         let line = serde_json::json!({
                             "model": model,
                             "done": true,
@@ -955,6 +1097,11 @@ pub(crate) async fn ollama_generate_handler(
                         break;
                     }
                     StreamChunk::Error(e) => {
+                        crate::core::metrics::ApfelMetrics::global().record_request(
+                            "/api/generate",
+                            500,
+                            active_guard.elapsed().as_secs_f64(),
+                        );
                         let line = serde_json::json!({
                             "model": model,
                             "error": e.to_string(),

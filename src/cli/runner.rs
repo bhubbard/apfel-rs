@@ -18,7 +18,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Executes the apfel CLI with the configured backend engine.
 pub async fn run_cli(args: CliArgs) -> i32 {
@@ -668,6 +668,73 @@ async fn run_benchmark(engine: &dyn BackendEngine) -> i32 {
     ApfelExitCodes::SUCCESS
 }
 
+fn print_trace_hud(
+    ttft: Option<Duration>,
+    total_time: Duration,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    context_size: usize,
+    start_rss: u64,
+    finish_reason: &str,
+) {
+    let end_rss = crate::core::metrics::ApfelMetrics::resident_memory_bytes();
+    let ttft_str = if let Some(t) = ttft {
+        format!("{:.1}ms", t.as_secs_f64() * 1000.0)
+    } else {
+        "N/A".to_string()
+    };
+
+    let gen_time = if let Some(t) = ttft {
+        total_time.saturating_sub(t)
+    } else {
+        total_time
+    };
+
+    let tok_per_sec = if gen_time.as_secs_f64() > 0.0 && completion_tokens > 0 {
+        (completion_tokens as f64) / gen_time.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    let thermal = crate::core::thermal::PowerThermalMonitor::current_thermal_state();
+    let thermal_str = match thermal {
+        crate::core::thermal::ThermalState::Nominal => "Nominal (Optimal)".green(),
+        crate::core::thermal::ThermalState::Fair => "Fair (Minor Throttle)".yellow(),
+        crate::core::thermal::ThermalState::Serious => "Serious (Thermal Throttled)".red(),
+        crate::core::thermal::ThermalState::Critical => "Critical (Emergency Low Power)".red().bold(),
+    };
+
+    let total_tokens = prompt_tokens + completion_tokens;
+    let context_pct = if context_size > 0 {
+        (total_tokens as f64 / context_size as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let rss_mb = (end_rss as f64) / (1024.0 * 1024.0);
+    let rss_delta_kb = ((end_rss as i64) - (start_rss as i64)) / 1024;
+    let rss_delta_str = if rss_delta_kb >= 0 {
+        format!("+{}KB", rss_delta_kb)
+    } else {
+        format!("{}KB", rss_delta_kb)
+    };
+
+    let meter_slots = 20;
+    let filled = ((tok_per_sec / 60.0).clamp(0.0, 1.0) * meter_slots as f64).round() as usize;
+    let bar: String = "█".repeat(filled) + &"░".repeat(meter_slots - filled);
+
+    eprintln!("\n{}", "╭── apfel Performance Trace & Latency HUD ─────────────────────────────╮".bold().cyan());
+    eprintln!("│ {:<28} {:>39} │", "Time to First Token (TTFT):", ttft_str.bold());
+    eprintln!("│ {:<28} {:>39} │", "Total Latency:", format!("{:.2?}", total_time).bold());
+    eprintln!("│ {:<28} {:>39} │", "Generation Throughput:", format!("[{}] {:.1} tok/s", bar, tok_per_sec).bold().green());
+    eprintln!("│ {:<28} {:>39} │", "Token Allocation:", format!("{} in + {} out = {} ({:.1}%)", prompt_tokens, completion_tokens, total_tokens, context_pct));
+    eprintln!("│ {:<28} {:>39} │", "Process Resident RSS:", format!("{:.2} MB ({})", rss_mb, rss_delta_str));
+    eprintln!("│ {:<28} {:>39} │", "Thread QoS Scheduling:", "QOS_CLASS_USER_INTERACTIVE".magenta());
+    eprintln!("│ {:<28} {:>39} │", "Thermal State:", format!("{}", thermal_str));
+    eprintln!("│ {:<28} {:>39} │", "Finish Reason:", finish_reason.yellow());
+    eprintln!("╰─────────────────────────────────────────────────────────────────────────╯");
+}
+
 async fn setup_mcp_manager(args: &CliArgs) -> Result<Option<Arc<MCPManager>>, i32> {
     let mut connections = Vec::new();
 
@@ -916,6 +983,12 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
     };
 
     if should_stream && mcp_manager.is_none() {
+        let start_rss = crate::core::metrics::ApfelMetrics::resident_memory_bytes();
+        let trace_start = Instant::now();
+        let prompt_tokens = engine.count_tokens(&prompt_text);
+        let mut stream_output_tokens = 0usize;
+        let mut first_token_time = None;
+
         let mut rx = match engine.stream_generate(&req) {
             Ok(rx) => rx,
             Err(e) => {
@@ -937,20 +1010,26 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
 
         while let Some(chunk) = rx.recv().await {
             match chunk {
-                StreamChunk::Delta(delta) => match stop_matcher.feed(&delta) {
-                    StopMatchResult::Emit(s) => {
-                        print!("{}", s);
-                        let _ = io::stdout().flush();
+                StreamChunk::Delta(delta) => {
+                    if first_token_time.is_none() && !delta.is_empty() {
+                        first_token_time = Some(trace_start.elapsed());
                     }
-                    StopMatchResult::Holding => {}
-                    StopMatchResult::Matched { emitted, .. } => {
-                        print!("{}", emitted);
-                        let _ = io::stdout().flush();
-                        matched_stop = true;
-                        final_finish_reason = "stop".to_string();
-                        break;
+                    stream_output_tokens += engine.count_tokens(&delta);
+                    match stop_matcher.feed(&delta) {
+                        StopMatchResult::Emit(s) => {
+                            print!("{}", s);
+                            let _ = io::stdout().flush();
+                        }
+                        StopMatchResult::Holding => {}
+                        StopMatchResult::Matched { emitted, .. } => {
+                            print!("{}", emitted);
+                            let _ = io::stdout().flush();
+                            matched_stop = true;
+                            final_finish_reason = "stop".to_string();
+                            break;
+                        }
                     }
-                },
+                }
                 StreamChunk::Done { finish_reason } => {
                     let flushed = stop_matcher.flush();
                     if !flushed.is_empty() {
@@ -968,6 +1047,18 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
                     return e.exit_code();
                 }
             }
+        }
+
+        if args.trace {
+            print_trace_hud(
+                first_token_time,
+                trace_start.elapsed(),
+                prompt_tokens,
+                stream_output_tokens,
+                engine.context_size(),
+                start_rss,
+                &final_finish_reason,
+            );
         }
 
         if args.require_complete && final_finish_reason == "length" && !matched_stop {
@@ -1010,6 +1101,8 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             }
         }
 
+        let start_rss = crate::core::metrics::ApfelMetrics::resident_memory_bytes();
+        let prompt_tokens = engine.count_tokens(&prompt_text);
         let t_start = Instant::now();
         let res = match session_mgr
             .process_messages(
@@ -1136,6 +1229,19 @@ async fn run_generation(args: CliArgs, engine: Arc<dyn BackendEngine>) -> i32 {
             {
                 let _ = writeln!(file, "{}", record);
             }
+        }
+
+        if args.trace {
+            let comp_tokens = engine.count_tokens(&content);
+            print_trace_hud(
+                None,
+                t_start.elapsed(),
+                prompt_tokens,
+                comp_tokens,
+                engine.context_size(),
+                start_rss,
+                &finish_reason,
+            );
         }
 
         if args.code {

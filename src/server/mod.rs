@@ -41,6 +41,7 @@ pub async fn run_server(
     let router = Router::new()
         .route("/health", get(handlers::health_handler))
         .route("/", get(handlers::health_handler))
+        .route("/metrics", get(handlers::metrics_handler))
         .route("/v1/models", get(handlers::list_models_handler))
         .route(
             "/v1/chat/completions",

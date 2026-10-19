@@ -12,6 +12,7 @@ pub mod file_framing;
 pub mod guard;
 pub mod json_stripper;
 pub mod messages_input;
+pub mod metrics;
 pub mod models;
 pub mod responses_models;
 pub mod schema;
@@ -33,6 +34,7 @@ pub use file_framing::{frame_document, frame_image, FileFraming};
 pub use guard::{ApfelGuard, SecretVault};
 pub use json_stripper::JSONFenceStripper;
 pub use messages_input::MessagesInput;
+pub use metrics::{ActiveRequestGuard, ActiveStreamingGuard, ApfelMetrics};
 pub use models::*;
 pub mod openai_models {
     pub use crate::core::models::*;

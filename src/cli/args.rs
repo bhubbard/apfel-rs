@@ -185,6 +185,10 @@ pub struct CliArgs {
     #[arg(long = "benchmark")]
     pub benchmark: bool,
 
+    /// Enable live latency trace and performance observability HUD
+    #[arg(long = "trace")]
+    pub trace: bool,
+
     /// Append structured execution telemetry JSONL to a file path
     #[arg(long = "telemetry", value_name = "PATH")]
     pub telemetry: Option<String>,
